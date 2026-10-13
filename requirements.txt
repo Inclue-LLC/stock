@@ -2,6 +2,6 @@ fastapi==0.143.0
 uvicorn==0.54.0
 jinja2==3.1.6
 python-multipart==0.0.32
-sqlalchemy==2.1.4
+google-cloud-firestore==2.34.1
 openpyxl==3.1.5
 pdfplumber==0.11.10

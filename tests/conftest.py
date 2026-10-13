@@ -1,21 +1,72 @@
+"""テストは Firestore エミュレータに対して実行する。
+
+FIRESTORE_EMULATOR_HOST が未設定なら、firebase-tools がダウンロードしたエミュレータ（Java）を自動で起動する。
+  （事前に `npx firebase-tools setup:emulators:firestore` を一度実行しておく）
+"""
+
+import glob
 import os
-import tempfile
+import socket
+import subprocess
+import time
+import urllib.request
+from pathlib import Path
 
-_tmp = tempfile.mkdtemp()
-os.environ["STOCK_DATA_DIR"] = _tmp
-os.environ["DATABASE_URL"] = f"sqlite:///{_tmp}/test.db"
+import pytest
 
-import pytest  # noqa: E402
+PROJECT = "demo-stock-test"
+os.environ["GOOGLE_CLOUD_PROJECT"] = PROJECT
+
+
+def _free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def _start_emulator():
+    jars = sorted(glob.glob(str(Path.home() / ".cache/firebase/emulators/cloud-firestore-emulator-*.jar")))
+    if not jars:
+        pytest.exit("Firestore エミュレータが見つかりません。`npx firebase-tools setup:emulators:firestore` を実行してください")
+    port = _free_port()
+    proc = subprocess.Popen(["java", "-jar", jars[-1], "--host=127.0.0.1", f"--port={port}"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for _ in range(100):
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=1)
+            break
+        except Exception:
+            time.sleep(0.2)
+    return proc, f"127.0.0.1:{port}"
+
+
+_proc = None
+if not os.environ.get("FIRESTORE_EMULATOR_HOST"):
+    _proc, os.environ["FIRESTORE_EMULATOR_HOST"] = _start_emulator()
+
+
+def pytest_unconfigure(config):
+    if _proc:
+        _proc.terminate()
+
+
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app.db import Base, engine  # noqa: E402
 from app.main import app  # noqa: E402
+from app.store import store  # noqa: E402
+
+
+def clear_emulator():
+    host = os.environ["FIRESTORE_EMULATOR_HOST"]
+    req = urllib.request.Request(
+        f"http://{host}/emulator/v1/projects/{PROJECT}/databases/(default)/documents", method="DELETE")
+    urllib.request.urlopen(req)
+    store.reset()
 
 
 @pytest.fixture
 def client():
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
+    clear_emulator()
     with TestClient(app) as c:
         yield c
 

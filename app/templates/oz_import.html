@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}初期データの取り込み{% endblock %}
+{% block subtitle %}<p class="sub">「OZ 納品数集計」Excel から、キャナルシティ博多店・GiGO新大久保の納品・販売・在庫をまとめて取り込みます（最初の1回だけ）</p>{% endblock %}
+{% block content %}
+{% if result %}
+<section class="card">
+  <div class="card-head"><h2>{{ "取り込みました" if result.saved else "確認結果（まだ保存していません）" }}</h2><span class="muted">{{ filename }}</span></div>
+  <div class="card-body">
+    <p>商品: 新規 <b>{{ result.created }}</b>件 / 既存 <b>{{ result.updated }}</b>件</p>
+    <ul class="steps">{% for line in result.stores %}<li>{{ line }}</li>{% endfor %}</ul>
+    {% if result.warnings %}
+    <details class="more" style="margin-top:12px" open>
+      <summary>注意 {{ result.warnings|length }}件（JANコードの重複・誤りを自動で補正しました）</summary>
+      <ul class="steps" style="margin-top:8px">{% for w in result.warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+    </details>
+    {% endif %}
+    {% if result.saved %}<p style="margin-top:16px"><a class="btn" href="/locations">拠点の画面を開く</a></p>{% endif %}
+  </div>
+</section>
+{% endif %}
+{% if not result or not result.saved %}
+<section class="card">
+  <form method="post" action="/imports/oz" enctype="multipart/form-data" class="card-body form">
+    <label class="dropzone" data-dropzone>
+      {{ icon("file") }}
+      <strong>OZ 納品数集計の Excel を選択、またはドラッグ＆ドロップ</strong>
+      <span class="hint">シート「OZ納品数_商品別」「GiGO新大久保」「キャナル販売データ」「キャナル販売在庫」を使います</span>
+      <div class="fname"></div>
+      <input type="file" name="file" accept=".xlsx" required>
+    </label>
+    <div class="actions">
+      <button name="mode" value="check" class="ghost lg">確認する（保存しない）</button>
+      <button name="mode" value="save" class="lg" onclick="return confirm('取り込みますか？（1回だけ実行してください）')">{{ icon("upload") }}取り込む</button>
+    </div>
+    <p class="hint" style="margin:0">「2512 OZ広島」は取り込みません。すでに記録がある店舗がある場合は、二重取込を防ぐため中止します。</p>
+  </form>
+</section>
+<script src="/static/dropzone.js"></script>
+{% endif %}
+{% endblock %}

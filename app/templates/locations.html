@@ -14,7 +14,7 @@
         <td class="name"><a href="/locations/{{ l.id }}">{{ l.name }}</a>{% if l.note %}<span class="sub">{{ l.note }}</span>{% endif %}</td>
         <td>{{ badge(l) }}</td>
         <td class="r"><b>{{ n(totals.get(l.id) or 0) }}</b></td>
-        <td class="muted nowrap">{{ last_updated[l.id].strftime("%Y-%m-%d %H:%M") if l.id in last_updated else "未更新" }}</td>
+        <td class="muted nowrap">{{ l.updated_at.strftime("%Y-%m-%d %H:%M") if l.updated_at else "未更新" }}</td>
         <td class="r"><a class="btn sm" href="/imports?location_id={{ l.id }}">{{ icon("upload") }}在庫を更新</a></td>
       </tr>
     {% endfor %}

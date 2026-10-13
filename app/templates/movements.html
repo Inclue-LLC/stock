@@ -19,6 +19,7 @@
     <button class="ghost">絞り込み</button>
   </form>
   {% if filters.batch_id %}<p class="hint" style="padding: 8px 20px 0; margin: 0">取込 #{{ filters.batch_id }} で反映された履歴のみ表示しています。<a href="/movements">解除</a></p>{% endif %}
+  {% if truncated %}<p class="hint" style="padding: 8px 20px 0; margin: 0">新しい順に最大2,000件まで表示しています。拠点で絞り込むと古い履歴も確認できます。</p>{% endif %}
   {% if page.items %}
   <div class="table-wrap">
   <table>

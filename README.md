@@ -1,6 +1,6 @@
 # 在庫管理システム
 
-日本・中国の **倉庫** と **委託店舗** の在庫を一元管理する Web アプリです。
+日本・中国の **倉庫** と **委託店舗** の在庫を一元管理する Web アプリです（Firebase / Cloud Run で公開）。
 商品は **JANコード** で管理し、各拠点の在庫は **Excel / CSV / PDF のアップロード** でいつでも更新できます。
 委託店舗ごとに、納品（日付別）・販売・在庫・消化率・上代ベースの金額を一覧で確認できます。
 
@@ -57,61 +57,73 @@ JAN の列は文字列形式になっていて、桁数・チェックデジッ�
 - CSV の文字コードは UTF-8 / Shift_JIS / GB18030 を自動判別します。
 - 取込画面からテンプレート Excel をダウンロードできます。
 
-## 起動方法
-
-Python 3.10 以上が必要です（macOS 標準の 3.9 では動きません。https://www.python.org/downloads/ から入れてください）。
-
-```bash
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
-
-ブラウザで http://localhost:8000 を開き、まず「拠点」と「商品」を登録してください。
-
-データは `data/stock.db`（SQLite）に保存されます。環境変数で変更できます。
-
-- `STOCK_DATA_DIR`: データ保存ディレクトリ
-- `DATABASE_URL`: SQLAlchemy の接続 URL（例：PostgreSQL）
-
-JANコード対応前のバージョンで作った `data/stock.db` は使えません。起動時にエラーが出たら、そのファイルを削除してください。
-
-## 既存データの取り込み（初回のみ）
-
-「OZ 納品数集計」Excel（キャナルシティ博多店・GiGO新大久保）を一括で取り込めます。
-
-```bash
-.venv/bin/python scripts/import_oz_workbook.py ファイル.xlsx --dry-run   # 確認だけ（保存しない）
-.venv/bin/python scripts/import_oz_workbook.py ファイル.xlsx             # 取り込む
-```
-
-- 2506 OZ・2512 OZ福岡・OZ福岡 4/21追加 はキャナルシティ博多店への納品として取り込みます（2512 OZ広島は対象外）。
-- 同じ店舗に入出庫の記録がある場合は、二重取込を防ぐため中止します。
-- JAN の重複・誤りは商品名で他シートと照合して補正し、結果を「注意」として表示します。
-
-## テスト
-
-```bash
-.venv/bin/pip install -r requirements-dev.txt
-.venv/bin/pytest
-```
-
 ## 構成
 
 ```
-app/
-  main.py        画面・ルーティング（FastAPI）
-  models.py      テーブル定義（拠点・商品・在庫・入出庫履歴・取込バッチ）
-  services.py    在庫の増減・移動・取込反映・商品マスタ取込
-  jan.py         JANコードの正規化とチェックデジット検証
-  importers.py   Excel / CSV / PDF の読み取り
-  xlsx_templates.py  ダウンロード用 Excel テンプレート
-  templates/     画面（Jinja2）
-  static/        CSS
-tests/
+ブラウザ ── Firebase Hosting（https://<プロジェクトID>.web.app）
+              └─ Cloud Run（このアプリ。東京リージョン、最大1インスタンス）
+                    └─ Firestore（データ）
 ```
 
-## 未対応（今後の検討事項）
+- データは Firestore に保存します。ブラウザから Firestore への直接アクセスはルールで拒否し、読み書きはサーバー経由だけです。
+- 拠点・商品・在庫（店舗別明細の累計を含む）はサーバーのメモリにも持ち、画面表示では Firestore を読みません。
+  そのため **Cloud Run の最大インスタンス数は 1 にしてください**（deploy.sh で設定済み）。
+- ログインはありません。URL を知っている人は誰でも閲覧・更新できます。検索エンジンには載らない設定（noindex）にしています。
 
-- ログイン・権限管理（現状は社内ネットワーク内での利用を想定）
-- スキャンPDFの OCR、委託店舗ごとの精算、在庫アラート
+```
+app/
+  main.py           画面・ルーティング（FastAPI）
+  models.py         データの型
+  store.py          Firestore への保存とメモリキャッシュ
+  services.py       在庫の増減・取込反映・商品マスタ取込・店舗別明細
+  oz_import.py      OZ 納品数集計 Excel の一括取込（初期データ）
+  jan.py            JANコードの正規化とチェックデジット検証
+  importers.py      Excel / CSV / PDF の読み取り
+  xlsx_templates.py ダウンロード用 Excel テンプレート
+  templates/ static/
+scripts/deploy.sh   デプロイ
+firebase.json       Hosting → Cloud Run の転送、Firestore ルール
+Dockerfile
+```
+
+## 公開（デプロイ）
+
+### 1. Firebase コンソールでの準備（最初だけ）
+
+1. Firebase コンソールでプロジェクトを開き、料金プランを **Blaze（従量課金）** にします（Cloud Run に必要）。
+   この規模なら無料枠に収まり、通常は月0円です。念のため「予算アラート」（例：月1,000円）を設定してください。
+2. Firestore は deploy.sh が東京リージョンに作成します（すでにあればそのまま使います）。
+
+### 2. デプロイ
+
+Mac に [Google Cloud CLI](https://cloud.google.com/sdk/docs/install) と Firebase CLI（`npm install -g firebase-tools`）を入れてから:
+
+```bash
+gcloud auth login
+firebase login
+scripts/deploy.sh <プロジェクトID>
+```
+
+完了すると `https://<プロジェクトID>.web.app` で使えます。コードを更新したときも同じコマンドで反映できます。
+
+### 3. 初期データの取り込み
+
+公開した画面の「在庫の更新」→ 下部の「初期データの取り込み」から、OZ 納品数集計の Excel をアップロードします。
+「確認する」で件数を確かめてから「取り込む」を押してください（二重取込は自動で防ぎます）。
+
+## 開発（ローカル）
+
+Firestore エミュレータ（Java が必要）を使います。
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+npx firebase-tools emulators:start --only firestore      # 別のターミナルで起動したまま
+FIRESTORE_EMULATOR_HOST=127.0.0.1:8081 GOOGLE_CLOUD_PROJECT=demo-stock .venv/bin/uvicorn app.main:app --port 8000
+```
+
+テスト（エミュレータを自動で起動します。初回のみ `npx firebase-tools setup:emulators:firestore`）:
+
+```bash
+.venv/bin/pytest
+```

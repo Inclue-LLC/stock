@@ -3,11 +3,9 @@ import re
 
 import pytest
 from openpyxl import Workbook
-from sqlalchemy import select
-
 from app import jan
-from app.db import SessionLocal
-from app.models import Location, Product, Stock
+from app.models import Product
+from app.store import store
 
 JAN_A = "4900000000016"  # seeded: 品番 A-001 / 商品A
 JAN_B = "4900000000023"
@@ -15,22 +13,26 @@ JAN_C = "4900000000030"
 JAN_D = "4900000000047"
 
 
+def fresh():
+    """メモリのキャッシュを捨てて Firestore から読み直す（保存されたことの確認）。"""
+    store.reset()
+    store.ensure_loaded()
+    return store
+
+
 def qty(code, loc_name):
-    with SessionLocal() as db:
-        return db.scalar(
-            select(Stock.quantity).join(Stock.product).join(Stock.location)
-            .where(Product.jan == code, Location.name == loc_name)
-        )
+    st = fresh()
+    p, loc = st.product_by_jan(code), st.location_by_name(loc_name)
+    s = st.stock(p.id, loc.id) if p and loc else None
+    return s.quantity if s else None
 
 
 def loc_id(name):
-    with SessionLocal() as db:
-        return db.scalar(select(Location.id).where(Location.name == name))
+    return fresh().location_by_name(name).id
 
 
 def prod(code):
-    with SessionLocal() as db:
-        return db.scalar(select(Product).where(Product.jan == code))
+    return fresh().product_by_jan(code)
 
 
 def move(client, kind, quantity, loc="東京倉庫", code=JAN_A, on=None):
@@ -38,12 +40,10 @@ def move(client, kind, quantity, loc="東京倉庫", code=JAN_A, on=None):
     from app import services
     from app.models import MovementKind
 
-    with SessionLocal() as db:
-        product = db.scalar(select(Product).where(Product.jan == code))
-        location = db.scalar(select(Location).where(Location.name == loc))
-        services.apply_movement(db, product=product, location=location, kind=MovementKind(kind),
-                                quantity=quantity, on=on)
-        db.commit()
+    st = fresh()
+    with st.writing():
+        services.apply_movement(st, product=st.product_by_jan(code), location=st.location_by_name(loc),
+                                kind=MovementKind(kind), quantity=quantity, on=on)
 
 
 # ---- JAN -----------------------------------------------------------------------
@@ -98,11 +98,11 @@ def test_home_redirects_to_stocks_and_stock_views(seeded):
 def test_pagination(seeded):
     from app.jan import check_digit
 
-    with SessionLocal() as db:
+    st = fresh()
+    with st.writing():
         for i in range(120):
             body = f"490100{i:06d}"
-            db.add(Product(jan=body + str(check_digit(body)), name=f"商品{i:03d}"))
-        db.commit()
+            st.save_product(Product(jan=body + str(check_digit(body)), name=f"商品{i:03d}"))
     html = seeded.get("/products").text
     assert "121件中 1–50件" in html
     assert "121件中 101–121件" in seeded.get("/products", params={"page": 3}).text
@@ -159,9 +159,9 @@ def upload(client, filename, data, kind="IN", location=None):
     r = client.post("/imports", data={"kind": kind, "location_id": loc_id(location) if location else ""},
                     files={"file": (filename, data)})
     assert r.status_code == 200
-    m = re.search(r"/imports/(\d+)$", str(r.url))
+    m = re.search(r"/imports/(\w+)$", str(r.url))
     assert m, r.url
-    return int(m.group(1)), r.text
+    return m.group(1), r.text
 
 
 def test_excel_import_with_new_product_and_location_column(seeded):
@@ -271,8 +271,9 @@ def test_store_report(seeded):
     assert (a.brand, a.price) == ("Studio Haneul", 330)  # 取込ファイルからマスタの空欄を補完
 
     from app import services
-    with SessionLocal() as db:
-        loc = db.get(Location, loc_id("大阪委託店"))
+    if True:
+        db = fresh()
+        loc = db.location_by_name("大阪委託店")
         rep = services.store_report(db, loc)
         rows = {r.product.jan: r for r in rep.rows}
         assert rep.delivery_dates == [date(2025, 9, 26), date(2025, 11, 9)]
@@ -312,8 +313,8 @@ def test_products_without_jan(seeded):
                  [None, "ふわふわぬいぐるみ", None, 550]])
     r = seeded.post("/products/import", files={"file": ("m.xlsx", data)})
     assert "新規 1件" in r.text and "エラー" not in r.text
-    with SessionLocal() as db:
-        p = db.scalar(select(Product).where(Product.name == "ふわふわぬいぐるみ"))
+    if True:
+        p = fresh().products_by_name("ふわふわぬいぐるみ")[0]
         assert p.jan is None and p.price == 550 and p.brand == "Studio Haneul"
 
     # 在庫取込: JAN なし行は商品名で照合。未登録の商品名は JAN なしで新規登録
@@ -322,8 +323,8 @@ def test_products_without_jan(seeded):
     batch_id, html = upload(seeded, "nojan.xlsx", data, location="大阪委託店")
     assert "JANなし" in html and "合計" not in html.split("<tbody>")[1]
     seeded.post(f"/imports/{batch_id}/apply")
-    with SessionLocal() as db:
-        names = {s.product.name: s.quantity for s in db.scalars(select(Stock)).all()}
+    if True:
+        names = {s.product.name: s.quantity for s in fresh().all_stocks()}
         assert names == {"ふわふわぬいぐるみ": 87, "フロッキーマスコット": 12}
 
     # 画面からも JAN なしで登録できる（同名の JAN なし商品は重複不可）
