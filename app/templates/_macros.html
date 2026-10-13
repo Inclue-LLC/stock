@@ -1,18 +1,64 @@
+{% macro icon(name) -%}
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+{%- if name == "home" -%}<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-6h4v6"/>
+{%- elif name == "boxes" -%}<path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/>
+{%- elif name == "scan" -%}<path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8M10 8v8M13 8v8M17 8v8"/>
+{%- elif name == "upload" -%}<path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>
+{%- elif name == "download" -%}<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>
+{%- elif name == "history" -%}<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/>
+{%- elif name == "tag" -%}<path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9-9-9Z"/><circle cx="7.5" cy="7.5" r="1.5"/>
+{%- elif name == "pin" -%}<path d="M12 21s-7-6.1-7-11.5a7 7 0 0 1 14 0C19 14.9 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.5"/>
+{%- elif name == "check" -%}<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>
+{%- elif name == "alert" -%}<circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5v.5"/>
+{%- elif name == "search" -%}<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>
+{%- elif name == "plus" -%}<path d="M12 5v14M5 12h14"/>
+{%- elif name == "arrow" -%}<path d="M5 12h14M13 6l6 6-6 6"/>
+{%- elif name == "file" -%}<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z"/><path d="M14 3v6h6"/>
+{%- elif name == "warehouse" -%}<path d="M3 21V8l9-5 9 5v13"/><path d="M7 21v-8h10v8"/><path d="M7 17h10"/>
+{%- elif name == "store" -%}<path d="M4 9h16l-1.5-5h-13Z"/><path d="M5 9v12h14V9"/><path d="M10 21v-6h4v6"/>
+{%- endif -%}
+</svg>
+{%- endmacro %}
+
 {% macro badge(loc) -%}
-<span class="badge r-{{ loc.region.value }}">{{ loc.region.label }}</span><span class="badge t-{{ loc.type.value }}">{{ loc.type.label }}</span>
+<span class="chip r-{{ loc.region.value }}">{{ loc.region.label }}</span><span class="chip t-{{ loc.type.value }}">{{ loc.type.label }}</span>
 {%- endmacro %}
 
 {% macro location_options(locations, selected=None, blank=None) -%}
 {% if blank %}<option value="">{{ blank }}</option>{% endif %}
 {% for r in Region %}
+{% set group = locations | selectattr("region", "equalto", r) | list %}
+{% if group %}
 <optgroup label="{{ r.label }}">
-  {% for l in locations if l.region == r %}
+  {% for l in group %}
   <option value="{{ l.id }}" {% if selected == l.id %}selected{% endif %}>{{ l.name }}（{{ l.type.label }}）</option>
   {% endfor %}
 </optgroup>
+{% endif %}
 {% endfor %}
 {%- endmacro %}
 
 {% macro delta(v) -%}
 <span class="num {% if v > 0 %}pos{% elif v < 0 %}neg{% endif %}">{% if v > 0 %}+{% endif %}{{ "{:,}".format(v) }}</span>
+{%- endmacro %}
+
+{% macro n(v) -%}{{ "{:,}".format(v) }}{%- endmacro %}
+
+{% macro pager(page, url_with) -%}
+{% if page.total %}
+<div class="pager">
+  <span class="muted">{{ "{:,}".format(page.total) }}件中 {{ "{:,}".format(page.start) }}–{{ "{:,}".format(page.end) }}件</span>
+  {% if page.pages > 1 %}
+  <div class="pager-links">
+    {% if page.page > 1 %}<a href="{{ url_with(page=page.page - 1) }}">‹ 前へ</a>{% else %}<span class="disabled">‹ 前へ</span>{% endif %}
+    <span class="current">{{ page.page }} / {{ page.pages }}</span>
+    {% if page.page < page.pages %}<a href="{{ url_with(page=page.page + 1) }}">次へ ›</a>{% else %}<span class="disabled">次へ ›</span>{% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+{%- endmacro %}
+
+{% macro empty(text, href=None, link=None) -%}
+<div class="empty">{{ text }}{% if href %} <a href="{{ href }}">{{ link }}</a>{% endif %}</div>
 {%- endmacro %}

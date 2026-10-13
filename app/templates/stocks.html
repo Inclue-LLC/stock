@@ -1,38 +1,72 @@
 {% extends "base.html" %}
-{% from "_macros.html" import badge, location_options %}
+{% from "_macros.html" import icon, badge, location_options, n, pager, empty %}
 {% block title %}在庫一覧{% endblock %}
+{% block actions %}
+<a class="btn ghost" href="/stocks/export.xlsx{% if export_query %}?{{ export_query }}{% endif %}">{{ icon("download") }}Excel出力</a>
+{% endblock %}
 {% block content %}
-<h1>在庫一覧</h1>
-<form class="filters" method="get">
-  <select name="region"><option value="">地域：すべて</option>
-    {% for r in Region %}<option value="{{ r.value }}" {% if filters.region == r %}selected{% endif %}>{{ r.label }}</option>{% endfor %}
-  </select>
-  <select name="type"><option value="">種別：すべて</option>
-    {% for t in LocationType %}<option value="{{ t.value }}" {% if filters.ltype == t %}selected{% endif %}>{{ t.label }}</option>{% endfor %}
-  </select>
-  <select name="location_id">{{ location_options(locations, filters.location_id, "拠点：すべて") }}</select>
-  <input type="search" name="q" value="{{ filters.q }}" placeholder="品番・商品名">
-  <label class="check"><input type="checkbox" name="include_zero" value="1" {% if filters.include_zero %}checked{% endif %}> 在庫0も表示</label>
-  <button>絞り込み</button>
-  <a class="button secondary" href="/stocks/export.xlsx{% if export_query %}?{{ export_query }}{% endif %}">Excel出力</a>
-</form>
+<section class="card">
+  <form class="toolbar" method="get">
+    <input type="hidden" name="view" value="{{ view }}">
+    <div class="tabs">
+      <a href="{{ url_with(view='product') }}" class="{{ 'active' if view == 'product' }}">商品別</a>
+      <a href="{{ url_with(view='location') }}" class="{{ 'active' if view == 'location' }}">拠点別</a>
+    </div>
+    <label class="search grow">{{ icon("search") }}<input type="search" name="q" value="{{ filters.q }}" placeholder="JANコード・品番・商品名で検索" autofocus></label>
+    {% if view == "location" %}
+    <select name="region"><option value="">すべての地域</option>
+      {% for r in Region %}<option value="{{ r.value }}" {% if filters.region == r %}selected{% endif %}>{{ r.label }}</option>{% endfor %}
+    </select>
+    <select name="type"><option value="">すべての種別</option>
+      {% for t in LocationType %}<option value="{{ t.value }}" {% if filters.ltype == t %}selected{% endif %}>{{ t.label }}</option>{% endfor %}
+    </select>
+    <select name="location_id">{{ location_options(locations, filters.location_id, "すべての拠点") }}</select>
+    {% endif %}
+    <label class="check"><input type="checkbox" name="include_zero" value="1" {% if filters.include_zero %}checked{% endif %}> 在庫0も表示</label>
+    <button class="ghost">絞り込み</button>
+  </form>
 
-<table>
-  <thead><tr><th>品番</th><th>商品名</th><th>拠点</th><th>区分</th><th class="r">数量</th><th></th></tr></thead>
-  <tbody>
-  {% for s in stocks %}
-    <tr>
-      <td><a href="/products/{{ s.product_id }}">{{ s.product.sku }}</a></td>
-      <td>{{ s.product.name }}</td>
-      <td>{{ s.location.name }}</td>
-      <td>{{ badge(s.location) }}</td>
-      <td class="r {% if s.quantity < 0 %}neg{% endif %}">{{ "{:,}".format(s.quantity) }} {{ s.product.unit }}</td>
-      <td><a href="/movements/new?product_id={{ s.product_id }}&location_id={{ s.location_id }}">入出庫</a></td>
-    </tr>
+  {% if page.items %}
+  <div class="table-wrap">
+  {% if view == "product" %}
+  <table>
+    <thead><tr>
+      <th>商品</th><th>JANコード</th>
+      {% for r, t in categories %}<th class="r">{{ r.label }}<br><span class="chip t-{{ t.value }}">{{ t.label }}</span></th>{% endfor %}
+      <th class="r">合計</th>
+    </tr></thead>
+    <tbody>
+    {% for row in page.items %}{% set p = row[0] %}{% set qtys = row[1:] %}
+      <tr>
+        <td class="name"><a href="/products/{{ p.id }}">{{ p.name }}</a>{% if p.sku %}<span class="sub">{{ p.sku }}</span>{% endif %}</td>
+        <td class="mono">{{ p.jan }}</td>
+        {% for q in qtys[:-1] %}<td class="r {{ 'zero' if q == 0 }}">{{ n(q) if q else "–" }}</td>{% endfor %}
+        <td class="r"><b>{{ n(qtys[-1]) }}</b></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
   {% else %}
-    <tr><td colspan="6" class="muted">該当する在庫はありません</td></tr>
-  {% endfor %}
-  </tbody>
-  {% if stocks %}<tfoot><tr><th colspan="4">合計（{{ stocks|length }}行）</th><th class="r">{{ "{:,}".format(total) }}</th><th></th></tr></tfoot>{% endif %}
-</table>
+  <table>
+    <thead><tr><th>商品</th><th>JANコード</th><th>拠点</th><th>区分</th><th class="r">在庫数</th><th></th></tr></thead>
+    <tbody>
+    {% for s in page.items %}
+      <tr>
+        <td class="name"><a href="/products/{{ s.product_id }}">{{ s.product.name }}</a>{% if s.product.sku %}<span class="sub">{{ s.product.sku }}</span>{% endif %}</td>
+        <td class="mono">{{ s.product.jan }}</td>
+        <td>{{ s.location.name }}</td>
+        <td>{{ badge(s.location) }}</td>
+        <td class="r {% if s.quantity < 0 %}neg{% endif %}"><b>{{ n(s.quantity) }}</b> <span class="muted">{{ s.product.unit }}</span></td>
+        <td class="r"><a class="btn ghost sm" href="/movements/new?code={{ s.product.jan }}&location_id={{ s.location_id }}">入出庫</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  </div>
+  {{ pager(page, url_with) }}
+  {% else %}
+  {{ empty("該当する在庫はありません。") }}
+  {% endif %}
+</section>
 {% endblock %}

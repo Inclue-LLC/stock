@@ -4,7 +4,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from . import importers, services
+from . import jan as jancode
 from .db import get_db, init_db
 from .models import (
     ImportBatch,
@@ -43,6 +44,14 @@ templates.env.globals.update(Region=Region, LocationType=LocationType, MovementK
 
 
 def render(request: Request, name: str, **ctx):
+    def url_with(**changes):
+        params = {k: v for k, v in request.query_params.items() if k not in ("page", "msg", "error")}
+        params.update(changes)
+        params = {k: v for k, v in params.items() if v not in (None, "")}
+        return "?" + urlencode(params) if params else request.url.path
+
+    ctx.setdefault("url_with", url_with)
+    ctx.setdefault("path", request.url.path)
     ctx.setdefault("msg", request.query_params.get("msg"))
     ctx.setdefault("error", request.query_params.get("error"))
     return templates.TemplateResponse(request, name, ctx)
@@ -67,6 +76,21 @@ def int_or_none(value: str | None) -> int | None:
         return None
 
 
+def page_param(request: Request) -> int:
+    return int_or_none(request.query_params.get("page")) or 1
+
+
+def xlsx_response(wb, filename: str) -> StreamingResponse:
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
 def get_or_404(db: Session, model, obj_id: int):
     obj = db.get(model, obj_id)
     if obj is None:
@@ -88,13 +112,17 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         .group_by(Location.id)
         .order_by(Location.region, Location.type, Location.name)
     ).all()
-    recent = db.scalars(select(Movement).order_by(Movement.id.desc()).limit(10)).all()
+    recent = db.scalars(select(Movement).order_by(Movement.id.desc()).limit(8)).all()
+    matrix = services.category_matrix(db)
     return render(
         request, "dashboard.html",
-        matrix=services.category_matrix(db),
+        matrix=matrix,
+        grand_total=sum(matrix.values()),
         location_totals=location_totals,
         recent=recent,
         product_count=db.scalar(select(func.count(Product.id))),
+        in_stock_count=db.scalar(select(func.count(func.distinct(Stock.product_id))).where(Stock.quantity != 0)),
+        pending_imports=db.scalar(select(func.count(ImportBatch.id)).where(ImportBatch.status == "pending")),
     )
 
 
@@ -114,11 +142,18 @@ def _stock_filters(request: Request):
 @app.get("/stocks")
 def stock_list(request: Request, db: Session = Depends(get_db)):
     filters = _stock_filters(request)
-    stocks = db.scalars(services.stock_query(**filters)).all()
+    view = "location" if request.query_params.get("view") == "location" else "product"
+    if view == "product":
+        page = services.paginate(
+            db, services.product_totals_query(filters["q"], only_in_stock=not filters["include_zero"]),
+            page_param(request), per_page=100, scalars=False,
+        )
+    else:
+        page = services.paginate(db, services.stock_query(**filters), page_param(request), per_page=100)
     return render(
         request, "stocks.html",
-        stocks=stocks, filters=filters, locations=all_locations(db),
-        total=sum(s.quantity for s in stocks),
+        view=view, page=page, filters=filters, locations=all_locations(db),
+        categories=services.CATEGORIES,
         export_query=request.url.query,
     )
 
@@ -127,22 +162,24 @@ def stock_list(request: Request, db: Session = Depends(get_db)):
 def stock_export(request: Request, db: Session = Depends(get_db)):
     from openpyxl import Workbook
 
-    stocks = db.scalars(services.stock_query(**_stock_filters(request))).all()
+    filters = _stock_filters(request)
     wb = Workbook()
     ws = wb.active
     ws.title = "在庫"
-    ws.append(["品番", "商品名", "地域", "種別", "拠点", "数量", "単位"])
-    for s in stocks:
-        ws.append([s.product.sku, s.product.name, s.location.region.label, s.location.type.label,
-                   s.location.name, s.quantity, s.product.unit])
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    return StreamingResponse(
-        buf,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=stock.xlsx"},
-    )
+    if request.query_params.get("view") == "location":
+        ws.append(["JANコード", "品番", "商品名", "地域", "種別", "拠点", "数量", "単位"])
+        for s in db.scalars(services.stock_query(**filters)):
+            ws.append([s.product.jan, s.product.sku, s.product.name, s.location.region.label,
+                       s.location.type.label, s.location.name, s.quantity, s.product.unit])
+    else:
+        ws.append(["JANコード", "品番", "商品名"]
+                  + [f"{r.label}・{t.label}" for r, t in services.CATEGORIES] + ["合計", "単位"])
+        for p, *qtys in db.execute(services.product_totals_query(filters["q"], not filters["include_zero"])):
+            ws.append([p.jan, p.sku, p.name, *qtys, p.unit])
+    for col in ws.iter_cols(min_col=1, max_col=1):
+        for c in col:
+            c.number_format = "@"  # JAN を文字列として扱う
+    return xlsx_response(wb, "stock.xlsx")
 
 
 # ---- 拠点 ----------------------------------------------------------------------
@@ -198,33 +235,104 @@ def location_delete(location_id: int, db: Session = Depends(get_db)):
 
 @app.get("/products")
 def product_list(request: Request, q: str = "", db: Session = Depends(get_db)):
-    stmt = (
+    stmt = services.product_search(
         select(Product, func.coalesce(func.sum(Stock.quantity), 0))
         .outerjoin(Stock, Stock.product_id == Product.id)
         .group_by(Product.id)
-        .order_by(Product.sku)
+        .order_by(Product.name, Product.jan),
+        q,
     )
-    if q.strip():
-        like = f"%{q.strip()}%"
-        stmt = stmt.where(Product.sku.ilike(like) | Product.name.ilike(like))
-    return render(request, "products.html", products=db.execute(stmt).all(), q=q)
+    page = services.paginate(db, stmt, page_param(request), per_page=50, scalars=False)
+    return render(request, "products.html", page=page, q=q,
+                  prefill_jan=request.query_params.get("jan", ""))
 
 
 @app.post("/products")
 def product_create(
-    sku: str = Form(...), name: str = Form(...), unit: str = Form("個"), note: str = Form(""),
-    db: Session = Depends(get_db),
+    jan: str = Form(...), name: str = Form(...), sku: str = Form(""), unit: str = Form("個"),
+    note: str = Form(""), db: Session = Depends(get_db),
 ):
-    sku, name = sku.strip(), name.strip()
-    if not sku or not name:
-        return redirect("/products", error="品番と商品名を入力してください")
-    db.add(Product(sku=sku, name=name, unit=unit.strip() or "個", note=note))
+    code, err = jancode.try_normalize(jan)
+    if err:
+        return redirect("/products", error=err, jan=jan)
+    name = name.strip()
+    if not name:
+        return redirect("/products", error="商品名を入力してください", jan=jan)
+    product = Product(jan=code, name=name, sku=sku.strip(), unit=unit.strip() or "個", note=note)
+    db.add(product)
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
-        return redirect("/products", error=f"品番「{sku}」はすでに登録されています")
+        return redirect("/products", error=f"JANコード「{code}」はすでに登録されています")
     return redirect("/products", msg=f"商品「{name}」を登録しました")
+
+
+@app.post("/products/import")
+async def product_import(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    data = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(data) > MAX_UPLOAD_BYTES:
+        return redirect("/products", error="ファイルサイズが大きすぎます（上限20MB）")
+    try:
+        parsed = importers.parse_product_file(file.filename or "", data)
+    except ValueError as e:
+        return redirect("/products", error=str(e))
+    except Exception:
+        return redirect("/products", error="ファイルを読み込めませんでした。形式を確認してください")
+    if not parsed.rows:
+        return redirect("/products", error=" / ".join(parsed.warnings) or "商品が見つかりませんでした")
+    result = services.import_products(db, parsed.rows)
+    db.commit()
+    msg = f"商品マスタを取り込みました：新規 {result.created}件、更新 {result.updated}件"
+    error = None
+    if result.errors:
+        shown = result.errors[:10]
+        more = f" ほか{len(result.errors) - 10}件" if len(result.errors) > 10 else ""
+        error = f"エラー {len(result.errors)}件（取り込まれていません）: " + " / ".join(shown) + more
+    return redirect("/products", msg=msg, error=error)
+
+
+@app.get("/products/template.xlsx")
+def product_template():
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "商品マスタ"
+    ws.append(["JANコード", "商品名", "品番", "単位", "備考"])
+    ws.append(["4912345678904", "サンプル商品", "A-001", "個", ""])
+    for col, width in zip("ABCDE", (16, 32, 14, 6, 30)):
+        ws.column_dimensions[col].width = width
+    for row in ws.iter_rows(min_col=1, max_col=1):
+        row[0].number_format = "@"
+    return xlsx_response(wb, "product_template.xlsx")
+
+
+@app.get("/api/products/lookup")
+def product_lookup(code: str = "", db: Session = Depends(get_db)):
+    """JAN（または品番）から商品と拠点別在庫を返す。バーコード入力用。"""
+    code = code.strip()
+    is_jan = code.isdigit() or not code
+    product, _, err = services.find_product(db, code if is_jan else "", "" if is_jan else code)
+    if product is None:
+        return JSONResponse({"found": False, "error": err or "このJANコードの商品は未登録です"}, status_code=404)
+    stocks = db.scalars(
+        select(Stock).join(Stock.location).where(Stock.product_id == product.id)
+        .order_by(Location.region, Location.type, Location.name)
+    ).all()
+    return {
+        "found": True, "id": product.id, "jan": product.jan, "sku": product.sku, "name": product.name,
+        "unit": product.unit,
+        "stocks": {str(s.location_id): s.quantity for s in stocks},
+    }
+
+
+@app.get("/api/products/search")
+def product_suggest(q: str = "", db: Session = Depends(get_db)):
+    if len(q.strip()) < 1:
+        return []
+    rows = db.scalars(services.product_search(select(Product).order_by(Product.name), q).limit(10)).all()
+    return [{"jan": p.jan, "sku": p.sku, "name": p.name} for p in rows]
 
 
 @app.get("/products/{product_id}")
@@ -243,16 +351,22 @@ def product_detail(request: Request, product_id: int, db: Session = Depends(get_
 
 @app.post("/products/{product_id}")
 def product_update(
-    product_id: int, sku: str = Form(...), name: str = Form(...), unit: str = Form("個"),
+    product_id: int, jan: str = Form(...), name: str = Form(...), sku: str = Form(""), unit: str = Form("個"),
     note: str = Form(""), db: Session = Depends(get_db),
 ):
     product = get_or_404(db, Product, product_id)
-    product.sku, product.name, product.unit, product.note = sku.strip(), name.strip(), unit.strip() or "個", note
+    code, err = jancode.try_normalize(jan)
+    if err:
+        return redirect(f"/products/{product_id}", error=err)
+    if not name.strip():
+        return redirect(f"/products/{product_id}", error="商品名を入力してください")
+    product.jan, product.sku, product.name = code, sku.strip(), name.strip()
+    product.unit, product.note = unit.strip() or "個", note
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
-        return redirect(f"/products/{product_id}", error=f"品番「{sku}」はすでに使われています")
+        return redirect(f"/products/{product_id}", error=f"JANコード「{code}」はすでに使われています")
     return redirect(f"/products/{product_id}", msg="商品を更新しました")
 
 
@@ -270,26 +384,35 @@ def product_delete(product_id: int, db: Session = Depends(get_db)):
 
 @app.get("/movements/new")
 def movement_form(request: Request, db: Session = Depends(get_db)):
-    products = db.scalars(select(Product).order_by(Product.sku)).all()
+    p = request.query_params
     return render(
-        request, "movement_form.html", products=products, locations=all_locations(db),
-        selected_product=int_or_none(request.query_params.get("product_id")),
-        selected_location=int_or_none(request.query_params.get("location_id")),
+        request, "movement_form.html", locations=all_locations(db),
+        has_products=db.scalar(select(func.count(Product.id))) > 0,
+        selected_kind=p.get("kind") or "IN",
+        selected_location=int_or_none(p.get("location_id")),
+        selected_to=int_or_none(p.get("to_location_id")),
+        prefill_code=p.get("code", ""),
+        last=int_or_none(p.get("last")),
     )
 
 
 @app.post("/movements")
 def movement_create(
     kind: str = Form(...),
-    product_id: int = Form(...),
+    code: str = Form(...),
     location_id: int = Form(...),
     quantity: int = Form(...),
     to_location_id: str = Form(""),
     note: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    product = get_or_404(db, Product, product_id)
     location = get_or_404(db, Location, location_id)
+    keep = dict(kind=kind, location_id=location_id, to_location_id=to_location_id)
+    code = code.strip()
+    is_jan = code.isdigit()
+    product, _, err = services.find_product(db, code if is_jan else "", "" if is_jan else code)
+    if product is None:
+        return redirect("/movements/new", error=err or f"JANコード「{code}」の商品は未登録です", code=code, **keep)
     try:
         if kind == "TRANSFER":
             dst_id = int_or_none(to_location_id)
@@ -308,9 +431,9 @@ def movement_create(
         db.commit()
     except StockError as e:
         db.rollback()
-        return redirect("/movements/new", error=str(e), product_id=product_id, location_id=location_id)
+        return redirect("/movements/new", error=str(e), code=code, **keep)
     return redirect("/movements/new", msg=f"{product.name}：{label} {quantity}{product.unit} を登録しました",
-                    product_id=product_id, location_id=location_id)
+                    last=product.id, **keep)
 
 
 @app.get("/movements")
@@ -333,11 +456,11 @@ def movement_list(request: Request, db: Session = Depends(get_db)):
         stmt = stmt.where(Movement.source == source)
     if batch_id:
         stmt = stmt.where(Movement.batch_id == batch_id)
-    if q:
-        stmt = stmt.where(Product.sku.ilike(f"%{q}%") | Product.name.ilike(f"%{q}%"))
-    movements = db.scalars(stmt.limit(500)).all()
-    return render(request, "movements.html", movements=movements, locations=all_locations(db),
-                  filters=dict(region=region, ltype=ltype, location_id=location_id, source=source, q=q),
+    stmt = services.product_search(stmt, q)
+    page = services.paginate(db, stmt, page_param(request), per_page=100)
+    return render(request, "movements.html", page=page, locations=all_locations(db),
+                  filters=dict(region=region, ltype=ltype, location_id=location_id, source=source, q=q,
+                               batch_id=batch_id),
                   Source=Source)
 
 
@@ -358,19 +481,14 @@ def import_template():
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "取込"
-    ws.append(["品番", "商品名", "数量", "拠点", "単位", "備考"])
-    ws.append(["A-001", "サンプル商品", 10, "", "個", "拠点を空欄にすると取込画面で選んだ拠点になります"])
-    for col, width in zip("ABCDEF", (14, 28, 8, 18, 6, 40)):
+    ws.title = "在庫取込"
+    ws.append(["JANコード", "商品名", "数量", "拠点", "備考"])
+    ws.append(["4912345678904", "サンプル商品", 10, "", "拠点を空欄にすると取込画面で選んだ拠点になります"])
+    for col, width in zip("ABCDE", (16, 32, 8, 18, 40)):
         ws.column_dimensions[col].width = width
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    return StreamingResponse(
-        buf,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=import_template.xlsx"},
-    )
+    for row in ws.iter_rows(min_col=1, max_col=1):
+        row[0].number_format = "@"
+    return xlsx_response(wb, "stock_import_template.xlsx")
 
 
 @app.post("/imports")

@@ -1,43 +1,153 @@
 {% extends "base.html" %}
-{% from "_macros.html" import location_options %}
+{% from "_macros.html" import icon, location_options %}
 {% block title %}直接入力{% endblock %}
+{% block subtitle %}<p class="sub">JANコードを入力またはバーコードをスキャンして登録します</p>{% endblock %}
 {% block content %}
-<h1>直接入力</h1>
-{% if not products or not locations %}
-<p class="flash err">先に <a href="/products">商品</a> と <a href="/locations">拠点</a> を登録してください。</p>
+{% if not has_products or not locations %}
+<div class="alert err">{{ icon("alert") }}<span>先に <a href="/products">商品</a> と <a href="/locations">拠点</a> を登録してください。</span></div>
 {% else %}
-<section class="card narrow">
-  <form method="post" action="/movements" class="stack" id="mvform">
-    <fieldset class="kinds">
-      <label><input type="radio" name="kind" value="IN" checked> 入庫</label>
-      <label><input type="radio" name="kind" value="OUT"> 出庫</label>
-      <label><input type="radio" name="kind" value="SET"> 棚卸（数量を上書き）</label>
-      <label><input type="radio" name="kind" value="TRANSFER"> 拠点間移動</label>
-    </fieldset>
-    <label>商品
-      <select name="product_id" required>
-        {% for p in products %}<option value="{{ p.id }}" {% if selected_product == p.id %}selected{% endif %}>{{ p.sku }}　{{ p.name }}</option>{% endfor %}
-      </select>
+<div class="grid two">
+<section class="card">
+  <form method="post" action="/movements" class="card-body form" id="mvform" autocomplete="off">
+    <div class="segmented" role="radiogroup">
+      {% for v, label in [("IN", "入庫"), ("OUT", "出庫"), ("SET", "棚卸"), ("TRANSFER", "拠点間移動")] %}
+      <label><input type="radio" name="kind" value="{{ v }}" {% if selected_kind == v %}checked{% endif %}><span>{{ label }}</span></label>
+      {% endfor %}
+    </div>
+
+    <div class="row">
+      <label class="field"><span id="loclabel">拠点</span>
+        <select name="location_id" required>{{ location_options(locations, selected_location) }}</select>
+      </label>
+      <label class="field" id="tofield" hidden><span>移動先</span>
+        <select name="to_location_id">{{ location_options(locations, selected_to, "選択してください") }}</select>
+      </label>
+    </div>
+
+    <label class="field scan-input suggest"><span>JANコード / 品番 / 商品名</span>
+      <input name="code" id="code" value="{{ prefill_code }}" required autofocus placeholder="スキャンまたは入力" inputmode="text">
+      <ul id="suggest" hidden></ul>
     </label>
-    <label><span id="loclabel">拠点</span>
-      <select name="location_id" required>{{ location_options(locations, selected_location) }}</select>
-    </label>
-    <label id="tolabel" hidden>移動先
-      <select name="to_location_id">{{ location_options(locations, None, "選択してください") }}</select>
-    </label>
-    <label>数量 <input type="number" name="quantity" min="0" required inputmode="numeric"></label>
-    <label>備考 <input name="note" placeholder="伝票番号など"></label>
-    <button>登録</button>
+
+    <div class="product-preview" id="preview"><span class="muted">商品を指定すると、ここに商品名と現在の在庫が表示されます</span></div>
+
+    <div class="row">
+      <label class="field"><span id="qtylabel">数量</span><input type="number" name="quantity" id="qty" min="0" required inputmode="numeric"></label>
+      <label class="field"><span>備考</span><input name="note" placeholder="伝票番号など"></label>
+    </div>
+    <div><button class="lg" id="submit">{{ icon("check") }}登録する</button></div>
   </form>
 </section>
+<section class="card">
+  <div class="card-head"><h2>使い方</h2></div>
+  <div class="card-body">
+    <ol class="steps">
+      <li>区分（入庫・出庫・棚卸・移動）と拠点を選びます。</li>
+      <li>JANコードの欄でバーコードをスキャンします（手入力や商品名での検索も可）。</li>
+      <li>数量を入れて Enter で登録。区分と拠点はそのまま残るので、続けてスキャンできます。</li>
+    </ol>
+    <p class="hint">棚卸は、入力した数量でその拠点の在庫を上書きします。</p>
+  </div>
+</section>
+</div>
 <script>
+(() => {
   const form = document.getElementById('mvform');
-  const sync = () => {
+  const code = document.getElementById('code');
+  const qty = document.getElementById('qty');
+  const preview = document.getElementById('preview');
+  const list = document.getElementById('suggest');
+  const locSel = form.location_id;
+  let product = null, timer = null, items = [], active = -1;
+
+  const fmt = (v) => Number(v).toLocaleString('ja-JP');
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+
+  function syncKind() {
     const t = form.kind.value === 'TRANSFER';
-    document.getElementById('tolabel').hidden = !t;
+    document.getElementById('tofield').hidden = !t;
     document.getElementById('loclabel').textContent = t ? '移動元' : '拠点';
-  };
-  form.addEventListener('change', sync); sync();
+    document.getElementById('qtylabel').textContent = form.kind.value === 'SET' ? '実在庫数（上書き）' : '数量';
+    render();
+  }
+
+  function render() {
+    if (!product) return;
+    if (!product.found) {
+      preview.className = 'product-preview missing';
+      preview.innerHTML = esc(product.error) + (product.error.includes('未登録') && /^\d+$/.test(code.value.trim())
+        ? ` <a href="/products?jan=${encodeURIComponent(code.value.trim())}">商品を登録する</a>` : '');
+      return;
+    }
+    const here = product.stocks[locSel.value] || 0;
+    const total = Object.values(product.stocks).reduce((a, b) => a + b, 0);
+    preview.className = 'product-preview found';
+    preview.innerHTML = `<div class="pname">${esc(product.name)}</div>
+      <div class="pmeta mono">JAN ${esc(product.jan)}${product.sku ? '　品番 ' + esc(product.sku) : ''}</div>
+      <div class="pstock">この拠点の在庫 <b>${fmt(here)}</b> ${esc(product.unit)}　／　全拠点合計 ${fmt(total)}</div>`;
+  }
+
+  async function lookup(value) {
+    value = value.trim();
+    if (!value) { product = null; preview.className = 'product-preview'; return null; }
+    const res = await fetch('/api/products/lookup?code=' + encodeURIComponent(value));
+    product = await res.json();
+    render();
+    return product;
+  }
+
+  function hideList() { list.hidden = true; items = []; active = -1; }
+
+  async function suggest(value) {
+    if (value.trim().length < 1 || /^\d{8}$|^\d{13}$/.test(value.trim())) { hideList(); return; }
+    const res = await fetch('/api/products/search?q=' + encodeURIComponent(value.trim()));
+    items = await res.json();
+    active = -1;
+    if (!items.length) { hideList(); return; }
+    list.innerHTML = items.map((p, i) => `<li data-i="${i}"><span>${esc(p.name)}</span><span class="mono">${esc(p.jan)}</span></li>`).join('');
+    list.hidden = false;
+  }
+
+  function choose(i) {
+    code.value = items[i].jan;
+    hideList();
+    lookup(code.value).then((p) => { if (p && p.found) { qty.focus(); qty.select(); } });
+  }
+
+  code.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      const v = code.value.trim();
+      if (/^\d{8}$|^\d{13}$/.test(v)) { hideList(); lookup(v); } else { suggest(v); }
+    }, 200);
+  });
+  code.addEventListener('keydown', async (e) => {
+    if (!list.hidden && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      e.preventDefault();
+      active = (active + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+      [...list.children].forEach((li, i) => li.classList.toggle('active', i === active));
+      return;
+    }
+    if (e.key === 'Escape') { hideList(); return; }
+    if (e.key === 'Enter') {
+      e.preventDefault();  // スキャナーの Enter で送信しない
+      if (!list.hidden && active >= 0) { choose(active); return; }
+      hideList();
+      clearTimeout(timer);
+      const p = await lookup(code.value);
+      if (p && p.found) { qty.focus(); qty.select(); }
+    }
+  });
+  list.addEventListener('mousedown', (e) => {
+    const li = e.target.closest('li');
+    if (li) { e.preventDefault(); choose(Number(li.dataset.i)); }
+  });
+  code.addEventListener('blur', () => setTimeout(hideList, 100));
+  locSel.addEventListener('change', render);
+  form.addEventListener('change', (e) => { if (e.target.name === 'kind') syncKind(); });
+  syncKind();
+  if (code.value) lookup(code.value);
+})();
 </script>
 {% endif %}
 {% endblock %}

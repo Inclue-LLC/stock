@@ -29,5 +29,5 @@ def seeded(client):
         ("北京委託店", "CN", "CONSIGNMENT"),
     ]:
         client.post("/locations", data={"name": name, "region": region, "type": typ})
-    client.post("/products", data={"sku": "A-001", "name": "商品A", "unit": "個"})
+    client.post("/products", data={"jan": "4900000000016", "sku": "A-001", "name": "商品A", "unit": "個"})
     return client

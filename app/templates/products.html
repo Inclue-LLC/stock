@@ -1,36 +1,66 @@
 {% extends "base.html" %}
-{% block title %}商品{% endblock %}
+{% from "_macros.html" import icon, n, pager, empty %}
+{% block title %}商品マスタ{% endblock %}
+{% block subtitle %}<p class="sub">商品はJANコードで管理します</p>{% endblock %}
 {% block content %}
-<h1>商品</h1>
-<section class="card">
-  <h2>商品を追加</h2>
-  <form method="post" action="/products" class="inline">
-    <input name="sku" placeholder="品番" required>
-    <input name="name" placeholder="商品名" required>
-    <input name="unit" placeholder="単位" value="個" size="4">
-    <input name="note" placeholder="備考">
-    <button>追加</button>
-  </form>
-  <p class="muted">ファイル取込時に未登録の品番があれば、商品名付きで自動登録されます。</p>
-</section>
+<div class="grid half">
+  <section class="card">
+    <div class="card-head"><h2>商品を1件登録</h2></div>
+    <form method="post" action="/products" class="card-body form">
+      <div class="row">
+        <label class="field"><span>JANコード（8桁 / 13桁）</span><input name="jan" value="{{ prefill_jan }}" class="mono" inputmode="numeric" required placeholder="4912345678904"></label>
+        <label class="field"><span>品番（任意）</span><input name="sku" placeholder="A-001"></label>
+      </div>
+      <label class="field"><span>商品名</span><input name="name" required></label>
+      <div class="row">
+        <label class="field"><span>単位</span><input name="unit" value="個"></label>
+        <label class="field"><span>備考</span><input name="note"></label>
+      </div>
+      <div><button>{{ icon("plus") }}登録する</button></div>
+    </form>
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>Excel / CSV で一括登録</h2><a href="/products/template.xlsx">{{ icon("download") }} テンプレート</a></div>
+    <form method="post" action="/products/import" enctype="multipart/form-data" class="card-body form">
+      <label class="dropzone" data-dropzone>
+        {{ icon("file") }}
+        <strong>ファイルを選択、またはドラッグ＆ドロップ</strong>
+        <span class="hint">.xlsx / .csv ・「JANコード」「商品名」の列が必要（品番・単位・備考は任意）</span>
+        <div class="fname"></div>
+        <input type="file" name="file" accept=".xlsx,.xlsm,.csv" required>
+      </label>
+      <p class="hint" style="margin:0">同じJANコードの商品があれば、空欄以外の項目を上書きします。</p>
+      <div><button>{{ icon("upload") }}取り込む</button></div>
+    </form>
+  </section>
+</div>
 
-<form class="filters" method="get">
-  <input type="search" name="q" value="{{ q }}" placeholder="品番・商品名">
-  <button>検索</button>
-</form>
-<table>
-  <thead><tr><th>品番</th><th>商品名</th><th>単位</th><th class="r">総在庫</th></tr></thead>
-  <tbody>
-  {% for p, qty in products %}
-    <tr>
-      <td><a href="/products/{{ p.id }}">{{ p.sku }}</a></td>
-      <td>{{ p.name }}</td>
-      <td>{{ p.unit }}</td>
-      <td class="r">{{ "{:,}".format(qty) }}</td>
-    </tr>
+<section class="card">
+  <form class="toolbar" method="get">
+    <label class="search grow">{{ icon("search") }}<input type="search" name="q" value="{{ q }}" placeholder="JANコード・品番・商品名で検索（バーコードスキャン可）"></label>
+    <button class="ghost">検索</button>
+  </form>
+  {% if page.items %}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>商品名</th><th>JANコード</th><th>品番</th><th>単位</th><th class="r">総在庫</th></tr></thead>
+    <tbody>
+    {% for p, qty in page.items %}
+      <tr>
+        <td class="name"><a href="/products/{{ p.id }}">{{ p.name }}</a></td>
+        <td class="mono">{{ p.jan }}</td>
+        <td>{{ p.sku }}</td>
+        <td>{{ p.unit }}</td>
+        <td class="r {{ 'zero' if not qty }}"><b>{{ n(qty) }}</b></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {{ pager(page, url_with) }}
   {% else %}
-    <tr><td colspan="4" class="muted">商品はまだありません</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
+  {{ empty("該当する商品はありません。" if q else "商品はまだ登録されていません。") }}
+  {% endif %}
+</section>
+<script src="/static/dropzone.js"></script>
 {% endblock %}

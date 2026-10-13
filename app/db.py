@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, inspect
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -42,4 +42,10 @@ def get_db():
 def init_db():
     from . import models  # noqa: F401  (register tables)
 
+    insp = inspect(engine)
+    if insp.has_table("products") and "jan" not in {c["name"] for c in insp.get_columns("products")}:
+        raise RuntimeError(
+            "データベースが旧形式（JANコード対応前）です。"
+            f"テストデータのみであれば {DATA_DIR / 'stock.db'} を削除してから再起動してください。"
+        )
     Base.metadata.create_all(engine)
