@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from . import importers, services
+from . import importers, services, xlsx_templates
 from . import jan as jancode
 from .db import get_db, init_db
 from .models import (
@@ -102,28 +102,9 @@ def all_locations(db: Session) -> list[Location]:
     return list(db.scalars(select(Location).order_by(Location.region, Location.type, Location.name)))
 
 
-# ---- ダッシュボード ---------------------------------------------------------------
-
 @app.get("/")
-def dashboard(request: Request, db: Session = Depends(get_db)):
-    location_totals = db.execute(
-        select(Location, func.coalesce(func.sum(Stock.quantity), 0), func.count(Stock.id).filter(Stock.quantity != 0))
-        .outerjoin(Stock, Stock.location_id == Location.id)
-        .group_by(Location.id)
-        .order_by(Location.region, Location.type, Location.name)
-    ).all()
-    recent = db.scalars(select(Movement).order_by(Movement.id.desc()).limit(8)).all()
-    matrix = services.category_matrix(db)
-    return render(
-        request, "dashboard.html",
-        matrix=matrix,
-        grand_total=sum(matrix.values()),
-        location_totals=location_totals,
-        recent=recent,
-        product_count=db.scalar(select(func.count(Product.id))),
-        in_stock_count=db.scalar(select(func.count(func.distinct(Stock.product_id))).where(Stock.quantity != 0)),
-        pending_imports=db.scalar(select(func.count(ImportBatch.id)).where(ImportBatch.status == "pending")),
-    )
+def home():
+    return RedirectResponse("/stocks", status_code=307)
 
 
 # ---- 在庫一覧 -------------------------------------------------------------------
@@ -294,18 +275,7 @@ async def product_import(file: UploadFile = File(...), db: Session = Depends(get
 
 @app.get("/products/template.xlsx")
 def product_template():
-    from openpyxl import Workbook
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "商品マスタ"
-    ws.append(["JANコード", "商品名", "品番", "単位", "備考"])
-    ws.append(["4912345678904", "サンプル商品", "A-001", "個", ""])
-    for col, width in zip("ABCDE", (16, 32, 14, 6, 30)):
-        ws.column_dimensions[col].width = width
-    for row in ws.iter_rows(min_col=1, max_col=1):
-        row[0].number_format = "@"
-    return xlsx_response(wb, "product_template.xlsx")
+    return xlsx_response(xlsx_templates.product_master_workbook(), "product_master.xlsx")
 
 
 @app.get("/api/products/lookup")
@@ -477,18 +447,7 @@ def import_index(request: Request, db: Session = Depends(get_db)):
 
 @app.get("/imports/template.xlsx")
 def import_template():
-    from openpyxl import Workbook
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "在庫取込"
-    ws.append(["JANコード", "商品名", "数量", "拠点", "備考"])
-    ws.append(["4912345678904", "サンプル商品", 10, "", "拠点を空欄にすると取込画面で選んだ拠点になります"])
-    for col, width in zip("ABCDE", (16, 32, 8, 18, 40)):
-        ws.column_dimensions[col].width = width
-    for row in ws.iter_rows(min_col=1, max_col=1):
-        row[0].number_format = "@"
-    return xlsx_response(wb, "stock_import_template.xlsx")
+    return xlsx_response(xlsx_templates.stock_import_workbook(), "stock_import_template.xlsx")
 
 
 @app.post("/imports")

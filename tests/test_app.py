@@ -112,11 +112,10 @@ def test_out_more_than_stock_is_rejected(seeded):
     assert qty(JAN_A, "東京倉庫") == 2
 
 
-def test_dashboard_and_stock_views(seeded):
+def test_home_redirects_to_stocks_and_stock_views(seeded):
     move(seeded, "IN", 10)
     move(seeded, "IN", 7, loc="北京委託店")
-    html = seeded.get("/").text
-    assert "17" in html
+    assert seeded.get("/").url.path == "/stocks"
     by_loc = seeded.get("/stocks", params={"view": "location", "region": "CN"}).text
     assert "<td>北京委託店</td>" in by_loc and "<td>東京倉庫</td>" not in by_loc
     by_product = seeded.get("/stocks").text
@@ -162,6 +161,22 @@ def test_product_master_import(seeded):
     assert prod(JAN_B).unit == "箱"
     a = prod(JAN_A)
     assert a.name == "商品A（改）" and a.sku == "A-001"
+
+
+def test_product_master_template_roundtrip(seeded):
+    from openpyxl import load_workbook
+
+    wb = load_workbook(io.BytesIO(seeded.get("/products/template.xlsx").content))
+    ws = wb["商品マスタ"]
+    assert [c.value for c in ws[1]][:5] == ["JANコード", "商品名", "品番", "単位", "備考"]
+    assert ws["A2"].number_format == "@"
+    ws["A2"], ws["B2"], ws["D2"] = JAN_B, "商品B", "箱"
+    ws["A3"], ws["B3"] = JAN_C, "商品C"
+    buf = io.BytesIO()
+    wb.save(buf)
+    r = seeded.post("/products/import", files={"file": ("master.xlsx", buf.getvalue())})
+    assert "新規 2件" in r.text and "エラー" not in r.text
+    assert prod(JAN_B).unit == "箱" and prod(JAN_C).name == "商品C"
 
 
 # ---- 在庫取込 --------------------------------------------------------------------

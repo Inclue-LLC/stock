@@ -4,12 +4,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}ダッシュボード{% endblock %}｜在庫管理</title>
+<title>{% block title %}在庫管理{% endblock %}｜在庫管理</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 {% set nav = [
-  ("/", "home", "ダッシュボード"),
   ("/stocks", "boxes", "在庫一覧"),
   ("/movements/new", "scan", "直接入力"),
   ("/imports", "upload", "ファイル取込"),
@@ -19,10 +18,10 @@
 ] %}
 <div class="shell">
   <aside class="sidebar">
-    <a class="brand" href="/"><span class="logo">{{ icon("boxes") }}</span><span>在庫管理</span></a>
+    <a class="brand" href="/stocks"><span class="logo">{{ icon("boxes") }}</span><span>在庫管理</span></a>
     <nav>
       {% for href, ic, label in nav %}
-        {% set active = (path == href) or (href != "/" and path.startswith(href) and not (href == "/movements" and path.startswith("/movements/new"))) %}
+        {% set active = path.startswith(href) and ( not (href == "/movements" and path.startswith("/movements/new"))) %}
         <a href="{{ href }}" class="{{ 'active' if active }}">{{ icon(ic) }}<span>{{ label }}</span></a>
       {% endfor %}
     </nav>
