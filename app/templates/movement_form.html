@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% from "_macros.html" import location_options %}
+{% block title %}直接入力{% endblock %}
+{% block content %}
+<h1>直接入力</h1>
+{% if not products or not locations %}
+<p class="flash err">先に <a href="/products">商品</a> と <a href="/locations">拠点</a> を登録してください。</p>
+{% else %}
+<section class="card narrow">
+  <form method="post" action="/movements" class="stack" id="mvform">
+    <fieldset class="kinds">
+      <label><input type="radio" name="kind" value="IN" checked> 入庫</label>
+      <label><input type="radio" name="kind" value="OUT"> 出庫</label>
+      <label><input type="radio" name="kind" value="SET"> 棚卸（数量を上書き）</label>
+      <label><input type="radio" name="kind" value="TRANSFER"> 拠点間移動</label>
+    </fieldset>
+    <label>商品
+      <select name="product_id" required>
+        {% for p in products %}<option value="{{ p.id }}" {% if selected_product == p.id %}selected{% endif %}>{{ p.sku }}　{{ p.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label><span id="loclabel">拠点</span>
+      <select name="location_id" required>{{ location_options(locations, selected_location) }}</select>
+    </label>
+    <label id="tolabel" hidden>移動先
+      <select name="to_location_id">{{ location_options(locations, None, "選択してください") }}</select>
+    </label>
+    <label>数量 <input type="number" name="quantity" min="0" required inputmode="numeric"></label>
+    <label>備考 <input name="note" placeholder="伝票番号など"></label>
+    <button>登録</button>
+  </form>
+</section>
+<script>
+  const form = document.getElementById('mvform');
+  const sync = () => {
+    const t = form.kind.value === 'TRANSFER';
+    document.getElementById('tolabel').hidden = !t;
+    document.getElementById('loclabel').textContent = t ? '移動元' : '拠点';
+  };
+  form.addEventListener('change', sync); sync();
+</script>
+{% endif %}
+{% endblock %}

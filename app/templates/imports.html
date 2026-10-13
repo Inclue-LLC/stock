@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% from "_macros.html" import location_options %}
+{% block title %}ファイル取込{% endblock %}
+{% block content %}
+<h1>ファイル取込（Excel / CSV / PDF）</h1>
+<section class="card narrow">
+  <form method="post" action="/imports" enctype="multipart/form-data" class="stack">
+    <label>ファイル <input type="file" name="file" accept=".xlsx,.xlsm,.csv,.pdf" required></label>
+    <fieldset class="kinds">
+      {% for k in kinds %}
+      <label><input type="radio" name="kind" value="{{ k.value }}" {% if loop.first %}checked{% endif %}> {{ k.label }}{% if k == MovementKind.SET %}（数量を上書き）{% endif %}</label>
+      {% endfor %}
+    </fieldset>
+    <label>拠点
+      <select name="location_id">{{ location_options(locations, None, "ファイル内の「拠点」列を使う") }}</select>
+    </label>
+    <button>読み込んで確認</button>
+  </form>
+  <div class="muted help">
+    <p>ファイルの中から「品番」「数量」の列を自動で探します（商品名・拠点・単位・備考の列は任意）。日本語・中国語・英語の列名に対応しています（例：品番／商品コード／货号、数量／在庫数／库存）。</p>
+    <p>読み込み後に確認画面が出るので、内容を確認してから反映してください。<a href="/imports/template.xlsx">Excelテンプレートをダウンロード</a></p>
+  </div>
+</section>
+
+<h2>取込履歴</h2>
+<table>
+  <thead><tr><th>日時</th><th>ファイル</th><th>区分</th><th>拠点</th><th class="r">行数</th><th>状態</th></tr></thead>
+  <tbody>
+  {% for b in batches %}
+    <tr>
+      <td class="nowrap">{{ b.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+      <td><a href="/imports/{{ b.id }}">{{ b.filename }}</a> <span class="muted">{{ b.source.label }}</span></td>
+      <td>{{ b.kind.label }}</td>
+      <td>{{ b.location.name if b.location else "ファイル内指定" }}</td>
+      <td class="r">{{ b.rows|length }}</td>
+      <td><span class="status s-{{ b.status }}">{{ {"pending": "未反映", "applied": "反映済", "cancelled": "取消"}[b.status] }}</span></td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="muted">取込履歴はありません</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

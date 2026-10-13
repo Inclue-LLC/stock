@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, location_options %}
+{% block title %}在庫一覧{% endblock %}
+{% block content %}
+<h1>在庫一覧</h1>
+<form class="filters" method="get">
+  <select name="region"><option value="">地域：すべて</option>
+    {% for r in Region %}<option value="{{ r.value }}" {% if filters.region == r %}selected{% endif %}>{{ r.label }}</option>{% endfor %}
+  </select>
+  <select name="type"><option value="">種別：すべて</option>
+    {% for t in LocationType %}<option value="{{ t.value }}" {% if filters.ltype == t %}selected{% endif %}>{{ t.label }}</option>{% endfor %}
+  </select>
+  <select name="location_id">{{ location_options(locations, filters.location_id, "拠点：すべて") }}</select>
+  <input type="search" name="q" value="{{ filters.q }}" placeholder="品番・商品名">
+  <label class="check"><input type="checkbox" name="include_zero" value="1" {% if filters.include_zero %}checked{% endif %}> 在庫0も表示</label>
+  <button>絞り込み</button>
+  <a class="button secondary" href="/stocks/export.xlsx{% if export_query %}?{{ export_query }}{% endif %}">Excel出力</a>
+</form>
+
+<table>
+  <thead><tr><th>品番</th><th>商品名</th><th>拠点</th><th>区分</th><th class="r">数量</th><th></th></tr></thead>
+  <tbody>
+  {% for s in stocks %}
+    <tr>
+      <td><a href="/products/{{ s.product_id }}">{{ s.product.sku }}</a></td>
+      <td>{{ s.product.name }}</td>
+      <td>{{ s.location.name }}</td>
+      <td>{{ badge(s.location) }}</td>
+      <td class="r {% if s.quantity < 0 %}neg{% endif %}">{{ "{:,}".format(s.quantity) }} {{ s.product.unit }}</td>
+      <td><a href="/movements/new?product_id={{ s.product_id }}&location_id={{ s.location_id }}">入出庫</a></td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="muted">該当する在庫はありません</td></tr>
+  {% endfor %}
+  </tbody>
+  {% if stocks %}<tfoot><tr><th colspan="4">合計（{{ stocks|length }}行）</th><th class="r">{{ "{:,}".format(total) }}</th><th></th></tr></tfoot>{% endif %}
+</table>
+{% endblock %}

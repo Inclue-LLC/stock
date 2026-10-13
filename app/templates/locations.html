@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge %}
+{% block title %}拠点{% endblock %}
+{% block content %}
+<h1>拠点（倉庫・委託店舗）</h1>
+
+<section class="card">
+  <h2>拠点を追加</h2>
+  <form method="post" action="/locations" class="inline">
+    <input name="name" placeholder="拠点名（例：東京倉庫）" required>
+    <select name="region">{% for r in Region %}<option value="{{ r.value }}">{{ r.label }}</option>{% endfor %}</select>
+    <select name="type">{% for t in LocationType %}<option value="{{ t.value }}">{{ t.label }}</option>{% endfor %}</select>
+    <input name="note" placeholder="備考">
+    <button>追加</button>
+  </form>
+</section>
+
+<table>
+  <thead><tr><th>拠点名</th><th>地域</th><th>種別</th><th>備考</th><th></th></tr></thead>
+  <tbody>
+  {% for l in locations %}
+    <tr>
+      <td><input name="name" value="{{ l.name }}" required form="loc-{{ l.id }}"></td>
+      <td><select name="region" form="loc-{{ l.id }}">{% for r in Region %}<option value="{{ r.value }}" {% if l.region == r %}selected{% endif %}>{{ r.label }}</option>{% endfor %}</select></td>
+      <td><select name="type" form="loc-{{ l.id }}">{% for t in LocationType %}<option value="{{ t.value }}" {% if l.type == t %}selected{% endif %}>{{ t.label }}</option>{% endfor %}</select></td>
+      <td><input name="note" value="{{ l.note }}" form="loc-{{ l.id }}"></td>
+      <td class="nowrap">
+        <form id="loc-{{ l.id }}" method="post" action="/locations/{{ l.id }}">
+          <button class="small">保存</button>
+          <button class="small danger" formaction="/locations/{{ l.id }}/delete" onclick="return confirm('削除しますか？')">削除</button>
+        </form>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5" class="muted">拠点はまだありません</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, delta %}
+{% block content %}
+<h1>ダッシュボード</h1>
+
+<section class="matrix">
+  <table>
+    <thead><tr><th></th>{% for t in LocationType %}<th>{{ t.label }}</th>{% endfor %}<th>合計</th></tr></thead>
+    <tbody>
+    {% for r in Region %}
+      <tr>
+        <th>{{ r.label }}</th>
+        {% for t in LocationType %}
+        <td><a href="/stocks?region={{ r.value }}&type={{ t.value }}" class="big">{{ "{:,}".format(matrix[(r, t)]) }}</a></td>
+        {% endfor %}
+        <td class="big"><a href="/stocks?region={{ r.value }}">{{ "{:,}".format(matrix[(r, LocationType.WAREHOUSE)] + matrix[(r, LocationType.CONSIGNMENT)]) }}</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted">登録商品数: {{ product_count }}　／　数値をクリックするとその区分の在庫一覧を表示します</p>
+</section>
+
+<div class="cols">
+  <section>
+    <h2>拠点別在庫</h2>
+    {% if location_totals %}
+    <table>
+      <thead><tr><th>拠点</th><th>区分</th><th class="r">品目数</th><th class="r">数量</th></tr></thead>
+      <tbody>
+      {% for loc, qty, items in location_totals %}
+        <tr>
+          <td><a href="/stocks?location_id={{ loc.id }}">{{ loc.name }}</a></td>
+          <td>{{ badge(loc) }}</td>
+          <td class="r">{{ items }}</td>
+          <td class="r">{{ "{:,}".format(qty) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p>まだ拠点がありません。<a href="/locations">拠点を登録</a>してください。</p>
+    {% endif %}
+  </section>
+  <section>
+    <h2>最近の入出庫</h2>
+    <table>
+      <tbody>
+      {% for m in recent %}
+        <tr>
+          <td class="muted">{{ m.created_at.strftime("%m/%d %H:%M") }}</td>
+          <td>{{ m.kind.label }}</td>
+          <td><a href="/products/{{ m.product_id }}">{{ m.product.name }}</a></td>
+          <td>{{ m.location.name }}</td>
+          <td class="r">{{ delta(m.delta) }}</td>
+        </tr>
+      {% else %}
+        <tr><td class="muted">履歴はまだありません</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+{% endblock %}

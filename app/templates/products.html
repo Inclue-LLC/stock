@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}商品{% endblock %}
+{% block content %}
+<h1>商品</h1>
+<section class="card">
+  <h2>商品を追加</h2>
+  <form method="post" action="/products" class="inline">
+    <input name="sku" placeholder="品番" required>
+    <input name="name" placeholder="商品名" required>
+    <input name="unit" placeholder="単位" value="個" size="4">
+    <input name="note" placeholder="備考">
+    <button>追加</button>
+  </form>
+  <p class="muted">ファイル取込時に未登録の品番があれば、商品名付きで自動登録されます。</p>
+</section>
+
+<form class="filters" method="get">
+  <input type="search" name="q" value="{{ q }}" placeholder="品番・商品名">
+  <button>検索</button>
+</form>
+<table>
+  <thead><tr><th>品番</th><th>商品名</th><th>単位</th><th class="r">総在庫</th></tr></thead>
+  <tbody>
+  {% for p, qty in products %}
+    <tr>
+      <td><a href="/products/{{ p.id }}">{{ p.sku }}</a></td>
+      <td>{{ p.name }}</td>
+      <td>{{ p.unit }}</td>
+      <td class="r">{{ "{:,}".format(qty) }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="4" class="muted">商品はまだありません</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,18 @@
+{% macro badge(loc) -%}
+<span class="badge r-{{ loc.region.value }}">{{ loc.region.label }}</span><span class="badge t-{{ loc.type.value }}">{{ loc.type.label }}</span>
+{%- endmacro %}
+
+{% macro location_options(locations, selected=None, blank=None) -%}
+{% if blank %}<option value="">{{ blank }}</option>{% endif %}
+{% for r in Region %}
+<optgroup label="{{ r.label }}">
+  {% for l in locations if l.region == r %}
+  <option value="{{ l.id }}" {% if selected == l.id %}selected{% endif %}>{{ l.name }}（{{ l.type.label }}）</option>
+  {% endfor %}
+</optgroup>
+{% endfor %}
+{%- endmacro %}
+
+{% macro delta(v) -%}
+<span class="num {% if v > 0 %}pos{% elif v < 0 %}neg{% endif %}">{% if v > 0 %}+{% endif %}{{ "{:,}".format(v) }}</span>
+{%- endmacro %}

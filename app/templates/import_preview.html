@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% from "_macros.html" import location_options %}
+{% block title %}取込確認{% endblock %}
+{% block content %}
+<h1>取込確認 <small class="muted">{{ batch.filename }}</small></h1>
+<p>区分: <strong>{{ batch.kind.label }}</strong>　形式: {{ batch.source.label }}　状態:
+  <span class="status s-{{ batch.status }}">{{ {"pending": "未反映", "applied": "反映済", "cancelled": "取消"}[batch.status] }}</span></p>
+
+{% for w in batch.warnings %}<div class="flash warn">{{ w }}</div>{% endfor %}
+
+{% if batch.status == "pending" %}
+<form method="post" action="/imports/{{ batch.id }}/location" class="inline">
+  <label>拠点（「拠点」列が空の行に適用）
+    <select name="location_id" onchange="this.form.submit()">{{ location_options(locations, batch.location_id, "未指定") }}</select>
+  </label>
+</form>
+
+<table>
+  <thead><tr><th>#</th><th>品番</th><th>商品名</th><th>拠点</th><th class="r">数量</th><th class="r">現在</th><th class="r">反映後</th><th>確認</th></tr></thead>
+  <tbody>
+  {% for p in preview %}
+    <tr class="{% if p.errors %}row-err{% elif not p.product %}row-new{% endif %}">
+      <td class="muted">{{ p.index + 1 }}</td>
+      <td>{{ p.sku }}</td>
+      <td>{{ p.product.name if p.product else p.name }}</td>
+      <td>{% if p.location %}{{ p.location.name }}{% else %}{{ p.location_name or "" }}{% endif %}</td>
+      <td class="r">{{ p.quantity if p.quantity is not none else "?" }}</td>
+      <td class="r">{{ p.current if p.current is not none else "" }}</td>
+      <td class="r">{{ p.after if p.after is not none else "" }}</td>
+      <td>{% if p.errors %}{{ p.errors|join(" / ") }}{% elif not p.product %}新規商品として登録{% else %}OK{% endif %}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="8" class="muted">読み取れた行はありません</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<div class="actions">
+  <form method="post" action="/imports/{{ batch.id }}/apply">
+    <button {% if not ok_count %}disabled{% endif %}>{{ ok_count }}件を反映する{% if new_products %}（新規商品 {{ new_products }}件）{% endif %}</button>
+  </form>
+  <form method="post" action="/imports/{{ batch.id }}/cancel">
+    <button class="secondary">取り消す</button>
+  </form>
+  {% if ok_count < preview|length %}<span class="muted">エラーの {{ preview|length - ok_count }} 件は反映されません</span>{% endif %}
+</div>
+{% else %}
+<p>{% if batch.status == "applied" %}<a href="/movements?batch_id={{ batch.id }}">この取込で反映された履歴を見る</a>{% endif %}</p>
+<p><a href="/imports">取込画面に戻る</a></p>
+{% endif %}
+{% endblock %}

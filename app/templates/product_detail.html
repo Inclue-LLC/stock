@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, delta %}
+{% block title %}{{ product.name }}{% endblock %}
+{% block content %}
+<h1>{{ product.name }} <small class="muted">{{ product.sku }}</small></h1>
+
+<div class="cols">
+  <section>
+    <h2>拠点別在庫（合計 {{ "{:,}".format(total) }} {{ product.unit }}）</h2>
+    <table>
+      <tbody>
+      {% for s in stocks %}
+        <tr><td>{{ s.location.name }}</td><td>{{ badge(s.location) }}</td><td class="r">{{ "{:,}".format(s.quantity) }}</td></tr>
+      {% else %}
+        <tr><td class="muted">在庫はありません</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p><a class="button" href="/movements/new?product_id={{ product.id }}">入出庫を登録</a></p>
+  </section>
+  <section class="card">
+    <h2>商品情報</h2>
+    <form method="post" action="/products/{{ product.id }}" class="stack">
+      <label>品番 <input name="sku" value="{{ product.sku }}" required></label>
+      <label>商品名 <input name="name" value="{{ product.name }}" required></label>
+      <label>単位 <input name="unit" value="{{ product.unit }}"></label>
+      <label>備考 <textarea name="note">{{ product.note }}</textarea></label>
+      <div>
+        <button>保存</button>
+        <button class="danger" formaction="/products/{{ product.id }}/delete" onclick="return confirm('削除しますか？')">削除</button>
+      </div>
+    </form>
+  </section>
+</div>
+
+<h2>入出庫履歴</h2>
+<table>
+  <thead><tr><th>日時</th><th>区分</th><th>拠点</th><th class="r">増減</th><th class="r">変更後</th><th>入力元</th><th>備考</th></tr></thead>
+  <tbody>
+  {% for m in movements %}
+    <tr>
+      <td class="nowrap">{{ m.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+      <td>{{ m.kind.label }}</td>
+      <td>{{ m.location.name }}</td>
+      <td class="r">{{ delta(m.delta) }}</td>
+      <td class="r">{{ "{:,}".format(m.quantity_after) }}</td>
+      <td>{% if m.batch_id %}<a href="/imports/{{ m.batch_id }}">{{ m.source.label }}</a>{% else %}{{ m.source.label }}{% endif %}</td>
+      <td>{{ m.note }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="7" class="muted">履歴はありません</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}在庫管理{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/">在庫管理</a>
+  <nav>
+    <a href="/stocks">在庫一覧</a>
+    <a href="/movements/new">直接入力</a>
+    <a href="/imports">ファイル取込</a>
+    <a href="/movements">履歴</a>
+    <a href="/products">商品</a>
+    <a href="/locations">拠点</a>
+  </nav>
+</header>
+<main>
+  {% if msg %}<div class="flash ok">{{ msg }}</div>{% endif %}
+  {% if error %}<div class="flash err">{{ error }}</div>{% endif %}
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>

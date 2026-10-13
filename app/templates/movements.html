@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, delta, location_options %}
+{% block title %}入出庫履歴{% endblock %}
+{% block content %}
+<h1>入出庫履歴</h1>
+<form class="filters" method="get">
+  <select name="region"><option value="">地域：すべて</option>
+    {% for r in Region %}<option value="{{ r.value }}" {% if filters.region == r %}selected{% endif %}>{{ r.label }}</option>{% endfor %}
+  </select>
+  <select name="type"><option value="">種別：すべて</option>
+    {% for t in LocationType %}<option value="{{ t.value }}" {% if filters.ltype == t %}selected{% endif %}>{{ t.label }}</option>{% endfor %}
+  </select>
+  <select name="location_id">{{ location_options(locations, filters.location_id, "拠点：すべて") }}</select>
+  <select name="source"><option value="">入力元：すべて</option>
+    {% for s in Source %}<option value="{{ s.value }}" {% if filters.source == s %}selected{% endif %}>{{ s.label }}</option>{% endfor %}
+  </select>
+  <input type="search" name="q" value="{{ filters.q }}" placeholder="品番・商品名">
+  <button>絞り込み</button>
+</form>
+<table>
+  <thead><tr><th>日時</th><th>区分</th><th>商品</th><th>拠点</th><th class="r">増減</th><th class="r">変更後</th><th>入力元</th><th>備考</th></tr></thead>
+  <tbody>
+  {% for m in movements %}
+    <tr>
+      <td class="nowrap">{{ m.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+      <td>{{ m.kind.label }}</td>
+      <td><a href="/products/{{ m.product_id }}">{{ m.product.sku }}</a> {{ m.product.name }}</td>
+      <td>{{ m.location.name }} {{ badge(m.location) }}</td>
+      <td class="r">{{ delta(m.delta) }}</td>
+      <td class="r">{{ "{:,}".format(m.quantity_after) }}</td>
+      <td>{% if m.batch_id %}<a href="/imports/{{ m.batch_id }}">{{ m.source.label }}</a>{% else %}{{ m.source.label }}{% endif %}</td>
+      <td>{{ m.note }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="8" class="muted">履歴はありません</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
