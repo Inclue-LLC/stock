@@ -40,7 +40,7 @@
       <tr>
         <td class="name"><a href="/products/{{ p.id }}">{{ p.name }}</a>{% if p.sku %}<span class="sub">{{ p.sku }}</span>{% endif %}</td>
         <td>{{ p.brand }}</td>
-        <td class="mono">{{ p.jan }}</td>
+        <td class="mono">{{ p.jan  or "JANなし" }}</td>
         {% for q in qtys[:-1] %}<td class="r {{ 'zero' if q == 0 }}">{{ n(q) if q else "–" }}</td>{% endfor %}
         <td class="r"><b>{{ n(qtys[-1]) }}</b></td>
       </tr>
@@ -54,7 +54,7 @@
     {% for s in page.items %}
       <tr>
         <td class="name"><a href="/products/{{ s.product_id }}">{{ s.product.name }}</a>{% if s.product.sku %}<span class="sub">{{ s.product.sku }}</span>{% endif %}</td>
-        <td class="mono">{{ s.product.jan }}</td>
+        <td class="mono">{{ s.product.jan  or "JANなし" }}</td>
         <td>{{ s.location.name }}</td>
         <td>{{ badge(s.location) }}</td>
         <td class="r {% if s.quantity < 0 %}neg{% endif %}"><b>{{ n(s.quantity) }}</b> <span class="muted">{{ s.product.unit }}</span></td>

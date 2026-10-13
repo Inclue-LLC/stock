@@ -189,7 +189,7 @@ def test_excel_import_with_new_product_and_location_column(seeded):
 def test_import_by_sku_only(seeded):
     data = xlsx([["品番", "数量"], ["A-001", 6], ["Z-999", 1]])
     batch_id, html = upload(seeded, "sku.xlsx", data, location="東京倉庫")
-    assert "JANコードが必要" in html
+    assert "品番「Z-999」の商品は未登録です" in html
     seeded.post(f"/imports/{batch_id}/apply")
     assert qty(JAN_A, "東京倉庫") == 6
 
@@ -279,13 +279,13 @@ def test_store_report(seeded):
         ra = rows[JAN_A]
         assert (ra.delivered, ra.sold, ra.adjusted, ra.stock) == (30, 12, -1, 17)
         assert ra.deliveries == {date(2025, 9, 26): 20, date(2025, 11, 9): 10}
-        assert ra.sell_through == 0.4 and ra.sales_amount == 12 * 330
+        assert ra.sell_through == 12 / (12 + 17) and ra.sales_amount == 12 * 330
         assert rows[JAN_B].sales_amount == 4 * 1650
         assert rep.brands == ["Lovely MongMong", "Studio Haneul"]
         assert [r.product.jan for r in services.store_report(db, loc, brand="Lovely MongMong").rows] == [JAN_B]
 
     html = seeded.get(f"/locations/{loc_id('大阪委託店')}").text
-    assert "25/09/26" in html and "40%" in html and "Lovely MongMong" in html
+    assert "25/09/26" in html and "41%" in html and "Lovely MongMong" in html
     x = seeded.get(f"/locations/{loc_id('大阪委託店')}/export.xlsx")
     assert x.status_code == 200 and x.content[:2] == b"PK"
 
@@ -303,3 +303,33 @@ def test_zero_missing_on_full_stock_update(seeded):
     assert "ファイルにない 1件を0にしました" in r.text
     assert qty(JAN_A, "大阪委託店") == 4 and qty(JAN_B, "大阪委託店") == 0
     assert qty(JAN_B, "東京倉庫") == 9  # 他の拠点は変わらない
+
+
+def test_products_without_jan(seeded):
+    # 商品マスタ: JAN 空欄でも商品名で登録・更新できる
+    data = xlsx([["JANコード", "商品名", "ブランド", "上代（税込）"],
+                 [None, "ふわふわぬいぐるみ", "Studio Haneul", 500],
+                 [None, "ふわふわぬいぐるみ", None, 550]])
+    r = seeded.post("/products/import", files={"file": ("m.xlsx", data)})
+    assert "新規 1件" in r.text and "エラー" not in r.text
+    with SessionLocal() as db:
+        p = db.scalar(select(Product).where(Product.name == "ふわふわぬいぐるみ"))
+        assert p.jan is None and p.price == 550 and p.brand == "Studio Haneul"
+
+    # 在庫取込: JAN なし行は商品名で照合。未登録の商品名は JAN なしで新規登録
+    data = xlsx([["JANコード", "商品名", "数量"], [None, "ふわふわぬいぐるみ", 87], [None, "フロッキーマスコット", 12],
+                 [None, "合計", 99]])
+    batch_id, html = upload(seeded, "nojan.xlsx", data, location="大阪委託店")
+    assert "JANなし" in html and "合計" not in html.split("<tbody>")[1]
+    seeded.post(f"/imports/{batch_id}/apply")
+    with SessionLocal() as db:
+        names = {s.product.name: s.quantity for s in db.scalars(select(Stock)).all()}
+        assert names == {"ふわふわぬいぐるみ": 87, "フロッキーマスコット": 12}
+
+    # 画面からも JAN なしで登録できる（同名の JAN なし商品は重複不可）
+    r = seeded.post("/products", data={"jan": "", "name": "ベイビーキーホルダー"})
+    assert "登録しました" in r.text
+    r = seeded.post("/products", data={"jan": "", "name": "ベイビーキーホルダー"})
+    assert "すでに登録" in r.text
+    for path in ["/products", "/stocks", "/stocks?view=location", f"/locations/{loc_id('大阪委託店')}"]:
+        assert seeded.get(path).status_code == 200

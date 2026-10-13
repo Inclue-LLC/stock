@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon, n, pager, empty %}
 {% block title %}商品マスタ{% endblock %}
-{% block subtitle %}<p class="sub">商品はJANコードで管理します</p>{% endblock %}
+{% block subtitle %}<p class="sub">商品はJANコードで管理します（JANのない商品は商品名で管理）</p>{% endblock %}
 {% block content %}
 <div class="grid half">
   <section class="card">
     <div class="card-head"><h2>商品を1件登録</h2></div>
     <form method="post" action="/products" class="card-body form">
       <div class="row">
-        <label class="field"><span>JANコード（8桁 / 13桁）</span><input name="jan" value="{{ prefill_jan }}" class="mono" inputmode="numeric" required placeholder="4912345678904"></label>
+        <label class="field"><span>JANコード（8桁 / 13桁・ない場合は空欄）</span><input name="jan" value="{{ prefill_jan }}" class="mono" inputmode="numeric" placeholder="4580703202780"></label>
         <label class="field"><span>品番（任意）</span><input name="sku" placeholder="A-001"></label>
       </div>
       <label class="field"><span>商品名</span><input name="name" required></label>
@@ -54,7 +54,7 @@
       <tr>
         <td class="name"><a href="/products/{{ p.id }}">{{ p.name }}</a></td>
         <td>{{ p.brand }}</td>
-        <td class="mono">{{ p.jan }}</td>
+        <td class="mono">{{ p.jan or "" }}{% if not p.jan %}<span class="chip k">JANなし</span>{% endif %}</td>
         <td>{{ p.sku }}</td>
         <td class="r">{{ "{:,}".format(p.price) if p.price is not none else "" }}</td>
         <td class="r {{ 'zero' if not qty }}"><b>{{ n(qty) }}</b></td>

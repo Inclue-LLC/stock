@@ -50,6 +50,7 @@ def init_db():
         )
     Base.metadata.create_all(engine)
     _add_missing_columns()
+    _allow_null_jan()
 
 
 def _add_missing_columns():
@@ -68,3 +69,38 @@ def _add_missing_columns():
             for name, ddl in cols.items():
                 if name not in existing:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+
+
+def _allow_null_jan():
+    """products.jan を NULL 可にする（JAN なし商品の登録に対応。SQLite は列定義を変えられないので作り直す）。"""
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+    from .models import Product
+
+    raw = engine.raw_connection()
+    try:
+        cur = raw.cursor()
+        row = cur.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='products'").fetchone()
+        if not row or "jan VARCHAR(13) NOT NULL" not in row[0]:
+            return
+        ddl = row[0]
+        cols = ", ".join(r[1] for r in cur.execute("PRAGMA table_info(products)").fetchall())
+        raw.commit()
+        cur.execute("PRAGMA foreign_keys=OFF")
+        try:
+            cur.execute("BEGIN")
+            cur.execute(ddl.replace("CREATE TABLE products", "CREATE TABLE products_new", 1)
+                        .replace("jan VARCHAR(13) NOT NULL", "jan VARCHAR(13)"))
+            cur.execute(f"INSERT INTO products_new ({cols}) SELECT {cols} FROM products")
+            cur.execute("DROP TABLE products")
+            cur.execute("ALTER TABLE products_new RENAME TO products")
+            raw.commit()
+        except Exception:
+            raw.rollback()
+            raise
+        finally:
+            cur.execute("PRAGMA foreign_keys=ON")
+    finally:
+        raw.close()
+    for index in Product.__table__.indexes:
+        index.create(engine, checkfirst=True)

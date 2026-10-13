@@ -28,7 +28,7 @@ HEADER_ALIASES: dict[str, list[str]] = {
 }
 
 # どの列があれば取込対象の表とみなすか（タプル内はいずれか1つ）
-STOCK_REQUIRED = (("jan", "sku"), ("quantity",))
+STOCK_REQUIRED = (("jan", "sku", "name"), ("quantity",))
 PRODUCT_REQUIRED = (("jan",), ("name",))
 HEADER_SCAN_ROWS = 30
 
@@ -104,15 +104,17 @@ def rows_from_table(table: list[list], result: ParseResult, label: str = "", req
         cells = list(cells)
         jan = code_str(cell(cells, "jan"))
         sku = code_str(cell(cells, "sku"))
-        if not jan and not sku:
-            continue
-        if normalize(jan or sku) in ("合計", "小計", "total", "合计", "小计"):
-            continue
+        name = cell(cells, "name")
         raw_qty = cell(cells, "quantity")
         qty = parse_quantity(raw_qty)
+        if normalize(jan or sku or name) in ("合計", "小計", "total", "合计", "小计"):
+            continue
+        if not jan and not sku:
+            # JAN・品番のない行は、商品名があり（在庫ファイルなら数量も）ある場合だけ JAN なし商品として扱う
+            if name in (None, "") or ("quantity" in mapping and qty is None):
+                continue
         if "quantity" in mapping and qty is None:
             result.warnings.append(f"{label}{offset}行目: 数量「{raw_qty}」を読み取れません")
-        name = cell(cells, "name")
         location = cell(cells, "location")
         result.rows.append({
             "jan": jan,

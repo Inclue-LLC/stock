@@ -183,10 +183,20 @@ def paginate(db: Session, stmt, page: int, per_page: int = 50, scalars: bool = T
 
 # ---- 商品の特定 -------------------------------------------------------------------
 
-def find_product(db: Session, jan: str = "", sku: str = "") -> tuple[Product | None, str | None, str | None]:
-    """JAN（優先）または品番から商品を探す。戻り値: (商品, 正規化済みJAN, エラー)。
+def find_product_by_name(db: Session, name: str) -> tuple[Product | None, str | None]:
+    """JAN のない商品を商品名で探す。戻り値: (商品, エラー)。"""
+    found = db.scalars(select(Product).where(Product.name == name.strip()).limit(2)).all()
+    if len(found) > 1:
+        return None, f"商品名「{name}」の商品が複数あります。JANコードで指定してください"
+    return (found[0] if found else None), None
 
-    JAN が正しい形式で未登録の場合は (None, jan, None) を返す（新規登録可能）。
+
+def find_product(db: Session, jan: str = "", sku: str = "", name: str = ""
+                 ) -> tuple[Product | None, str | None, str | None]:
+    """JAN → 品番 → 商品名（JANなし商品）の順に商品を探す。戻り値: (商品, 正規化済みJAN, エラー)。
+
+    JAN が正しい形式で未登録の場合は (None, jan, None)、
+    JAN・品番がなく商品名が未登録の場合は (None, None, None) を返す（どちらも新規登録可能）。
     """
     if jan:
         code, err = jancode.try_normalize(jan)
@@ -199,8 +209,12 @@ def find_product(db: Session, jan: str = "", sku: str = "") -> tuple[Product | N
             return found[0], found[0].jan, None
         if len(found) > 1:
             return None, None, f"品番「{sku}」の商品が複数あります。JANコードで指定してください"
-        return None, None, f"品番「{sku}」の商品は未登録です（新規登録にはJANコードが必要です）"
-    return None, None, "JANコードがありません"
+        if not name:
+            return None, None, f"品番「{sku}」の商品は未登録です"
+    if name:
+        product, err = find_product_by_name(db, name)
+        return product, (product.jan if product else None), err
+    return None, None, "JANコード・品番・商品名のいずれも読み取れません"
 
 
 # ---- 商品マスタ取込 -----------------------------------------------------------------
@@ -217,11 +231,21 @@ def import_products(db: Session, rows: list[dict]) -> ProductImportResult:
     result = ProductImportResult()
     seen: dict[str, Product] = {}
     for i, row in enumerate(rows, start=1):
-        code, err = jancode.try_normalize(row.get("jan"))
-        if err:
-            result.errors.append(f"{i}件目: {err}")
-            continue
-        product = seen.get(code) or db.scalar(select(Product).where(Product.jan == code))
+        if row.get("jan"):
+            code, err = jancode.try_normalize(row["jan"])
+            if err:
+                result.errors.append(f"{i}件目: {err}")
+                continue
+            key = code
+            product = seen.get(key) or db.scalar(select(Product).where(Product.jan == code))
+        else:  # JAN なし商品は商品名で識別
+            if not row.get("name"):
+                continue
+            code, key = None, "name:" + row["name"]
+            product, err = (seen.get(key), None) if key in seen else find_product_by_name(db, row["name"])
+            if err:
+                result.errors.append(f"{i}件目: {err}")
+                continue
         if product is None:
             if not row.get("name"):
                 result.errors.append(f"{i}件目: JAN {code} の商品名がありません")
@@ -230,14 +254,15 @@ def import_products(db: Session, rows: list[dict]) -> ProductImportResult:
                               note=row.get("note") or "", brand=row.get("brand") or "", price=row.get("price"))
             db.add(product)
             result.created += 1
-        elif code not in seen:
+        elif key not in seen:
             result.updated += 1
-        for key in ("name", "sku", "unit", "note", "brand"):
-            if row.get(key):
-                setattr(product, key, row[key])
+        for field_name in ("name", "sku", "unit", "note", "brand"):
+            if row.get(field_name):
+                setattr(product, field_name, row[field_name])
         if row.get("price") is not None:
             product.price = row["price"]
-        seen[code] = product
+        seen[key] = product
+        db.flush()
     db.flush()
     return result
 
@@ -257,8 +282,10 @@ def validate_batch(db: Session, batch: ImportBatch) -> list[dict]:
     for i, row in enumerate(batch.rows):
         item = dict(row, index=i, errors=[], product=None, location=None, current=None, after=None,
                     location_name=row.get("location"), jan_code=None)
-        product, code, err = find_product(db, row.get("jan") or "", row.get("sku") or "")
+        product, code, err = find_product(db, row.get("jan") or "", row.get("sku") or "", row.get("name") or "")
         item["product"], item["jan_code"] = product, code
+        # 同一ファイル内で同じ商品を指す行をまとめるためのキー
+        item["key"] = f"id:{product.id}" if product else (code or f"name:{row.get('name') or ''}")
         if err:
             item["errors"].append(err)
         elif product is None and not row.get("name"):
@@ -271,8 +298,8 @@ def validate_batch(db: Session, batch: ImportBatch) -> list[dict]:
             )
         if row.get("quantity") is None:
             item["errors"].append("数量が読み取れません")
-        if loc is not None and code and row.get("quantity") is not None:
-            key = (code, loc.id)
+        if loc is not None and not err and row.get("quantity") is not None:
+            key = (item["key"], loc.id)
             if key in pending:
                 current = pending[key]
             elif product is not None:
@@ -307,10 +334,12 @@ def missing_stocks(db: Session, batch: ImportBatch, preview: list[dict]) -> list
     """
     if not (batch.zero_missing and batch.kind == MovementKind.SET):
         return []
-    in_file: dict[int, set[str]] = {}
+    in_file: dict[int, set[int]] = {}
     for item in preview:
         if not item["errors"]:
-            in_file.setdefault(item["location"].id, set()).add(item["jan_code"])
+            ids = in_file.setdefault(item["location"].id, set())
+            if item["product"] is not None:
+                ids.add(item["product"].id)
     if not in_file:
         return []
     stocks = db.scalars(
@@ -318,7 +347,7 @@ def missing_stocks(db: Session, batch: ImportBatch, preview: list[dict]) -> list
         .where(Stock.location_id.in_(in_file), Stock.quantity != 0)
         .order_by(Location.name, Product.name)
     ).all()
-    return [s for s in stocks if s.product.jan not in in_file[s.location_id]]
+    return [s for s in stocks if s.product_id not in in_file[s.location_id]]
 
 
 def apply_batch(db: Session, batch: ImportBatch, *, skip_errors: bool = True) -> tuple[int, int, int]:
@@ -335,14 +364,13 @@ def apply_batch(db: Session, batch: ImportBatch, *, skip_errors: bool = True) ->
                 raise StockError(f"{item['index'] + 1}行目: {' / '.join(item['errors'])}")
             skipped += 1
             continue
-        code = item["jan_code"]
-        product = item["product"] or created.get(code)
+        product = item["product"] or created.get(item["key"])
         if product is None:
-            product = Product(jan=code, sku=item.get("sku") or "", name=item["name"],
+            product = Product(jan=item["jan_code"], sku=item.get("sku") or "", name=item["name"],
                               unit=item.get("unit") or "個", brand=item.get("brand") or "", price=item.get("price"))
             db.add(product)
             db.flush()
-            created[code] = product
+            created[item["key"]] = product
         else:  # マスタの空欄（ブランド・上代）はファイルの値で補う
             if not product.brand and item.get("brand"):
                 product.brand = item["brand"]
@@ -381,8 +409,9 @@ class StoreRow:
 
     @property
     def sell_through(self) -> float | None:
-        """消化率 = 販売数 ÷ 納品数"""
-        return self.sold / self.delivered if self.delivered else None
+        """消化率 = 販売数 ÷（販売数 ＋ 在庫数）。納品記録が欠けていても 100% を超えない。"""
+        base = self.sold + max(self.stock, 0)
+        return self.sold / base if base else None
 
     @property
     def sales_amount(self) -> int | None:
@@ -407,8 +436,9 @@ class StoreReport:
 
     @property
     def sell_through(self) -> float | None:
-        delivered = self.total("delivered")
-        return self.total("sold") / delivered if delivered else None
+        sold = self.total("sold")
+        base = sold + sum(max(r.stock, 0) for r in self.rows)
+        return sold / base if base else None
 
 
 def store_report(db: Session, location: Location, brand: str = "", q: str = "") -> StoreReport:
@@ -445,7 +475,7 @@ def store_report(db: Session, location: Location, brand: str = "", q: str = "") 
         result = [r for r in result if r.product.brand == brand]
     if q:
         ql = q.lower()
-        result = [r for r in result if ql in r.product.name.lower() or r.product.jan.startswith(q)
+        result = [r for r in result if ql in r.product.name.lower() or (r.product.jan or "").startswith(q)
                   or ql in (r.product.sku or "").lower()]
     result.sort(key=lambda r: (r.product.brand or "\uffff", r.product.name))
     return StoreReport(rows=result, delivery_dates=sorted(dates), brands=brands)

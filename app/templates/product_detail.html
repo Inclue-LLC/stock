@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon, badge, delta, n, empty %}
 {% block title %}{{ product.name }}{% endblock %}
-{% block subtitle %}<p class="sub">{% if product.brand %}{{ product.brand }}　{% endif %}<span class="mono">JAN {{ product.jan }}</span>{% if product.sku %}　品番 {{ product.sku }}{% endif %}</p>{% endblock %}
+{% block subtitle %}<p class="sub">{% if product.brand %}{{ product.brand }}　{% endif %}<span class="mono">{{ "JAN " ~ product.jan if product.jan else "JANなし" }}</span>{% if product.sku %}　品番 {{ product.sku }}{% endif %}</p>{% endblock %}
 {% block content %}
 <div class="grid two">
   <section class="card">
@@ -20,7 +20,7 @@
     <div class="card-head"><h2>商品情報</h2></div>
     <form method="post" action="/products/{{ product.id }}" class="card-body form">
       <div class="row">
-        <label class="field"><span>JANコード</span><input name="jan" value="{{ product.jan }}" class="mono" required></label>
+        <label class="field"><span>JANコード</span><input name="jan" value="{{ product.jan or '' }}" class="mono" placeholder="なし"></label>
         <label class="field"><span>品番</span><input name="sku" value="{{ product.sku }}"></label>
       </div>
       <label class="field"><span>商品名</span><input name="name" value="{{ product.name }}" required></label>

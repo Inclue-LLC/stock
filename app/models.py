@@ -72,12 +72,12 @@ class Location(Base):
 
 
 class Product(Base):
-    """商品。JAN コードで一意に識別する（品番は任意の補助コード）。"""
+    """商品。JAN コードで一意に識別する。JAN のない商品は商品名で識別する（品番は任意の補助コード）。"""
 
     __tablename__ = "products"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    jan: Mapped[str] = mapped_column(String(13), unique=True, index=True)
+    jan: Mapped[str | None] = mapped_column(String(13), unique=True, index=True, nullable=True)
     sku: Mapped[str] = mapped_column(String(100), default="", index=True)
     brand: Mapped[str] = mapped_column(String(100), default="", index=True)
     name: Mapped[str] = mapped_column(String(200), index=True)

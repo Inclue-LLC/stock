@@ -68,7 +68,7 @@
       {% endif %}
       {% for r in group %}
       <tr>
-        <td class="stick name"><a href="/products/{{ r.product.id }}">{{ r.product.name }}</a><span class="sub mono">{{ r.product.jan }}</span></td>
+        <td class="stick name"><a href="/products/{{ r.product.id }}">{{ r.product.name }}</a><span class="sub mono">{{ r.product.jan  or "JANなし" }}</span></td>
         <td class="r muted">{{ "{:,}".format(r.product.price) if r.product.price is not none else "–" }}</td>
         {% for d in dates %}{% set v = r.deliveries.get(d) %}<td class="r date {{ 'zero' if not v }}">{{ n(v) if v else "" }}</td>{% endfor %}
         <td class="r grp"><b>{{ n(r.delivered) }}</b></td>
@@ -100,5 +100,5 @@
   {{ empty("この拠点にはまだ在庫・納品の記録がありません。", "/imports?location_id=" ~ location.id, "ファイルから更新する") }}
   {% endif %}
 </section>
-<p class="hint">消化率 ＝ 販売数 ÷ 納品数。調整 ＝「在庫を更新（上書き）」で数量を合わせたときの差分（ロス・棚差など）。</p>
+<p class="hint">消化率 ＝ 販売数 ÷（販売数 ＋ 在庫数）。調整 ＝「在庫数を上書き」で数量を合わせたときの差分（ロス・棚差、記録より前の納品など）。</p>
 {% endblock %}

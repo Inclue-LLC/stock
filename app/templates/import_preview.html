@@ -37,7 +37,7 @@
       <tr class="{% if p.errors %}row-err{% elif not p.product %}row-new{% endif %}">
         <td class="muted">{{ p.index + 1 }}</td>
         <td class="name">{{ p.product.name if p.product else p.name }}{% if p.sku %}<span class="sub">{{ p.sku }}</span>{% endif %}</td>
-        <td class="mono">{{ p.jan_code or p.jan }}</td>
+        <td class="mono">{{ p.jan_code or p.jan or "JANなし" }}</td>
         <td>{% if p.location %}{{ p.location.name }}{% else %}{{ p.location_name or "" }}{% endif %}</td>
         <td class="r"><b>{{ n(p.quantity) if p.quantity is not none else "?" }}</b></td>
         <td class="r muted">{{ n(p.current) if p.current is not none else "" }}</td>

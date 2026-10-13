@@ -28,7 +28,7 @@
       <tr>
         <td class="nowrap muted">{{ m.business_date.strftime("%Y-%m-%d") }}</td>
         <td><span class="chip k">{{ m.kind.label }}</span></td>
-        <td class="name"><a href="/products/{{ m.product_id }}">{{ m.product.name }}</a><span class="sub mono">{{ m.product.jan }}</span></td>
+        <td class="name"><a href="/products/{{ m.product_id }}">{{ m.product.name }}</a><span class="sub mono">{{ m.product.jan  or "JANなし" }}</span></td>
         <td>{{ m.location.name }}<br>{{ badge(m.location) }}</td>
         <td class="r">{{ delta(m.delta) }}</td>
         <td class="r">{{ n(m.quantity_after) }}</td>

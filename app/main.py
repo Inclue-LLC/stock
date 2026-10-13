@@ -213,7 +213,7 @@ def location_export(request: Request, location_id: int, db: Session = Depends(ge
     dates = report.delivery_dates
     ws.append(["ブランド", "商品名", "JANコード", "上代（税込）"]
               + [f"{d:%y/%m/%d} 納品" for d in dates]
-              + ["納品数 合計", "販売数", "在庫更新差分", "在庫数", "消化率", "販売金額（上代）", "在庫金額（上代）"])
+              + ["納品数 合計", "販売数", "在庫更新差分", "在庫数", "消化率（販売÷(販売+在庫)）", "販売金額（上代）", "在庫金額（上代）"])
     for c in ws[1]:
         c.font = Font(bold=True, color="FFFFFF")
         c.fill = PatternFill("solid", fgColor="1F4E9E")
@@ -299,15 +299,17 @@ def price_or_none(value: str) -> int | None:
 
 @app.post("/products")
 def product_create(
-    jan: str = Form(...), name: str = Form(...), sku: str = Form(""), unit: str = Form("個"),
+    jan: str = Form(""), name: str = Form(...), sku: str = Form(""), unit: str = Form("個"),
     brand: str = Form(""), price: str = Form(""), note: str = Form(""), db: Session = Depends(get_db),
 ):
-    code, err = jancode.try_normalize(jan)
+    code, err = jancode.try_normalize(jan) if jan.strip() else (None, None)
     if err:
         return redirect("/products", error=err, jan=jan)
     name = name.strip()
     if not name:
         return redirect("/products", error="商品名を入力してください", jan=jan)
+    if code is None and services.find_product_by_name(db, name)[0] is not None:
+        return redirect("/products", error=f"JANなしの商品「{name}」はすでに登録されています")
     product = Product(jan=code, name=name, sku=sku.strip(), unit=unit.strip() or "個", note=note,
                       brand=brand.strip(), price=price_or_none(price))
     db.add(product)
@@ -365,11 +367,11 @@ def product_detail(request: Request, product_id: int, db: Session = Depends(get_
 
 @app.post("/products/{product_id}")
 def product_update(
-    product_id: int, jan: str = Form(...), name: str = Form(...), sku: str = Form(""), unit: str = Form("個"),
+    product_id: int, jan: str = Form(""), name: str = Form(...), sku: str = Form(""), unit: str = Form("個"),
     brand: str = Form(""), price: str = Form(""), note: str = Form(""), db: Session = Depends(get_db),
 ):
     product = get_or_404(db, Product, product_id)
-    code, err = jancode.try_normalize(jan)
+    code, err = jancode.try_normalize(jan) if jan.strip() else (None, None)
     if err:
         return redirect(f"/products/{product_id}", error=err)
     if not name.strip():
