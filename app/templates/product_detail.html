@@ -1,8 +1,7 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon, badge, delta, n, empty %}
 {% block title %}{{ product.name }}{% endblock %}
-{% block subtitle %}<p class="sub"><span class="mono">JAN {{ product.jan }}</span>{% if product.sku %}　品番 {{ product.sku }}{% endif %}</p>{% endblock %}
-{% block actions %}<a class="btn" href="/movements/new?code={{ product.jan }}">{{ icon("scan") }}入出庫を登録</a>{% endblock %}
+{% block subtitle %}<p class="sub">{% if product.brand %}{{ product.brand }}　{% endif %}<span class="mono">JAN {{ product.jan }}</span>{% if product.sku %}　品番 {{ product.sku }}{% endif %}</p>{% endblock %}
 {% block content %}
 <div class="grid two">
   <section class="card">
@@ -26,6 +25,10 @@
       </div>
       <label class="field"><span>商品名</span><input name="name" value="{{ product.name }}" required></label>
       <div class="row">
+        <label class="field"><span>ブランド</span><input name="brand" value="{{ product.brand }}"></label>
+        <label class="field"><span>上代（税込）</span><input name="price" value="{{ product.price if product.price is not none else '' }}" inputmode="numeric"></label>
+      </div>
+      <div class="row">
         <label class="field"><span>単位</span><input name="unit" value="{{ product.unit }}"></label>
         <span></span>
       </div>
@@ -47,7 +50,7 @@
     <tbody>
     {% for m in movements %}
       <tr>
-        <td class="nowrap muted">{{ m.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td class="nowrap muted">{{ m.business_date.strftime("%Y-%m-%d") }}</td>
         <td><span class="chip k">{{ m.kind.label }}</span></td>
         <td>{{ m.location.name }}</td>
         <td class="r">{{ delta(m.delta) }}</td>

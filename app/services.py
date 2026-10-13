@@ -1,5 +1,6 @@
 import math
 from dataclasses import dataclass, field
+from datetime import date
 
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
@@ -56,6 +57,7 @@ def apply_movement(
     source: Source = Source.MANUAL,
     batch: ImportBatch | None = None,
     note: str = "",
+    on: date | None = None,
 ) -> Movement:
     stock = get_or_create_stock(db, product.id, location.id)
     delta = compute_delta(kind, stock.quantity, quantity)
@@ -74,22 +76,10 @@ def apply_movement(
         source=source,
         batch_id=batch.id if batch else None,
         note=note,
+        date=on,
     )
     db.add(mv)
     return mv
-
-
-def transfer(
-    db: Session, *, product: Product, src: Location, dst: Location, quantity: int, note: str = ""
-) -> None:
-    if src.id == dst.id:
-        raise StockError("移動元と移動先が同じです")
-    if quantity <= 0:
-        raise StockError("移動数量は1以上で入力してください")
-    apply_movement(db, product=product, location=src, kind=MovementKind.TRANSFER_OUT,
-                   quantity=quantity, note=note or f"→ {dst.name}")
-    apply_movement(db, product=product, location=dst, kind=MovementKind.TRANSFER_IN,
-                   quantity=quantity, note=note or f"← {src.name}")
 
 
 def category_matrix(db: Session) -> dict[tuple[Region, LocationType], int]:
@@ -237,14 +227,16 @@ def import_products(db: Session, rows: list[dict]) -> ProductImportResult:
                 result.errors.append(f"{i}件目: JAN {code} の商品名がありません")
                 continue
             product = Product(jan=code, name=row["name"], sku=row.get("sku") or "", unit=row.get("unit") or "個",
-                              note=row.get("note") or "")
+                              note=row.get("note") or "", brand=row.get("brand") or "", price=row.get("price"))
             db.add(product)
             result.created += 1
         elif code not in seen:
             result.updated += 1
-        for key in ("name", "sku", "unit", "note"):
+        for key in ("name", "sku", "unit", "note", "brand"):
             if row.get(key):
                 setattr(product, key, row[key])
+        if row.get("price") is not None:
+            product.price = row["price"]
         seen[code] = product
     db.flush()
     return result
@@ -308,13 +300,36 @@ def get_current_qty(db: Session, product_id: int, location_id: int) -> int:
     return qty or 0
 
 
-def apply_batch(db: Session, batch: ImportBatch, *, skip_errors: bool = True) -> tuple[int, int]:
-    """取込を確定する。戻り値は (反映件数, スキップ件数)。"""
+def missing_stocks(db: Session, batch: ImportBatch, preview: list[dict]) -> list[Stock]:
+    """在庫更新（棚卸）で「ファイルにない商品を0にする」とき、0にされる在庫。
+
+    対象は、ファイル内で正常に読めた行の拠点のみ。
+    """
+    if not (batch.zero_missing and batch.kind == MovementKind.SET):
+        return []
+    in_file: dict[int, set[str]] = {}
+    for item in preview:
+        if not item["errors"]:
+            in_file.setdefault(item["location"].id, set()).add(item["jan_code"])
+    if not in_file:
+        return []
+    stocks = db.scalars(
+        select(Stock).join(Stock.product).join(Stock.location)
+        .where(Stock.location_id.in_(in_file), Stock.quantity != 0)
+        .order_by(Location.name, Product.name)
+    ).all()
+    return [s for s in stocks if s.product.jan not in in_file[s.location_id]]
+
+
+def apply_batch(db: Session, batch: ImportBatch, *, skip_errors: bool = True) -> tuple[int, int, int]:
+    """取込を確定する。戻り値は (反映件数, スキップ件数, 0にした件数)。"""
     if batch.status != "pending":
         raise StockError("この取込はすでに処理済みです")
     applied = skipped = 0
     created: dict[str, Product] = {}  # 同一ファイル内で新規登録した商品
-    for item in validate_batch(db, batch):
+    preview = validate_batch(db, batch)
+    missing = missing_stocks(db, batch, preview)
+    for item in preview:
         if item["errors"]:
             if not skip_errors:
                 raise StockError(f"{item['index'] + 1}行目: {' / '.join(item['errors'])}")
@@ -324,10 +339,15 @@ def apply_batch(db: Session, batch: ImportBatch, *, skip_errors: bool = True) ->
         product = item["product"] or created.get(code)
         if product is None:
             product = Product(jan=code, sku=item.get("sku") or "", name=item["name"],
-                              unit=item.get("unit") or "個")
+                              unit=item.get("unit") or "個", brand=item.get("brand") or "", price=item.get("price"))
             db.add(product)
             db.flush()
             created[code] = product
+        else:  # マスタの空欄（ブランド・上代）はファイルの値で補う
+            if not product.brand and item.get("brand"):
+                product.brand = item["brand"]
+            if product.price is None and item.get("price") is not None:
+                product.price = item["price"]
         apply_movement(
             db,
             product=product,
@@ -337,8 +357,95 @@ def apply_batch(db: Session, batch: ImportBatch, *, skip_errors: bool = True) ->
             source=batch.source,
             batch=batch,
             note=item.get("note") or batch.filename,
+            on=batch.date,
         )
         db.flush()
         applied += 1
+    for stock in missing:
+        apply_movement(db, product=stock.product, location=stock.location, kind=MovementKind.SET, quantity=0,
+                       source=batch.source, batch=batch, note=f"{batch.filename} に記載なし", on=batch.date)
     batch.status = "applied"
-    return applied, skipped
+    return applied, skipped, len(missing)
+
+
+# ---- 拠点（店舗）別レポート ------------------------------------------------------------
+
+@dataclass
+class StoreRow:
+    product: Product
+    deliveries: dict  # 納品日 → 数量
+    delivered: int = 0
+    sold: int = 0
+    adjusted: int = 0  # 在庫更新による差分（ロス・棚差など）
+    stock: int = 0
+
+    @property
+    def sell_through(self) -> float | None:
+        """消化率 = 販売数 ÷ 納品数"""
+        return self.sold / self.delivered if self.delivered else None
+
+    @property
+    def sales_amount(self) -> int | None:
+        return self.sold * self.product.price if self.product.price is not None else None
+
+    @property
+    def stock_amount(self) -> int | None:
+        return self.stock * self.product.price if self.product.price is not None else None
+
+
+@dataclass
+class StoreReport:
+    rows: list[StoreRow]
+    delivery_dates: list[date]
+    brands: list[str]
+
+    def total(self, attr: str) -> int:
+        return sum(getattr(r, attr) or 0 for r in self.rows)
+
+    def delivery_total(self, d: date) -> int:
+        return sum(r.deliveries.get(d, 0) for r in self.rows)
+
+    @property
+    def sell_through(self) -> float | None:
+        delivered = self.total("delivered")
+        return self.total("sold") / delivered if delivered else None
+
+
+def store_report(db: Session, location: Location, brand: str = "", q: str = "") -> StoreReport:
+    """拠点ごとに、商品別の 納品（日付別）・販売・在庫更新差分・現在庫 を集計する。"""
+    rows: dict[int, StoreRow] = {}
+
+    def row(product: Product) -> StoreRow:
+        if product.id not in rows:
+            rows[product.id] = StoreRow(product=product, deliveries={})
+        return rows[product.id]
+
+    movements = db.scalars(
+        select(Movement).join(Movement.product).where(Movement.location_id == location.id)
+    ).all()
+    dates: set[date] = set()
+    for m in movements:
+        r = row(m.product)
+        if m.kind in (MovementKind.IN, MovementKind.TRANSFER_IN):
+            d = m.business_date
+            r.deliveries[d] = r.deliveries.get(d, 0) + m.delta
+            r.delivered += m.delta
+            dates.add(d)
+        elif m.kind in (MovementKind.OUT, MovementKind.TRANSFER_OUT):
+            r.sold += -m.delta
+        else:
+            r.adjusted += m.delta
+    for s in db.scalars(select(Stock).where(Stock.location_id == location.id)).all():
+        row(s.product).stock = s.quantity
+
+    all_rows = list(rows.values())
+    brands = sorted({r.product.brand for r in all_rows if r.product.brand})
+    result = all_rows
+    if brand:
+        result = [r for r in result if r.product.brand == brand]
+    if q:
+        ql = q.lower()
+        result = [r for r in result if ql in r.product.name.lower() or r.product.jan.startswith(q)
+                  or ql in (r.product.sku or "").lower()]
+    result.sort(key=lambda r: (r.product.brand or "\uffff", r.product.name))
+    return StoreReport(rows=result, delivery_dates=sorted(dates), brands=brands)

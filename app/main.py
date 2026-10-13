@@ -1,10 +1,11 @@
 import io
 from contextlib import asynccontextmanager
+from datetime import date
 from pathlib import Path
 from urllib.parse import urlencode
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
@@ -72,6 +73,13 @@ def enum_or_none(enum_cls, value: str | None):
 def int_or_none(value: str | None) -> int | None:
     try:
         return int(value) if value else None
+    except ValueError:
+        return None
+
+
+def parse_date(value: str | None) -> date | None:
+    try:
+        return date.fromisoformat(value) if value else None
     except ValueError:
         return None
 
@@ -167,7 +175,63 @@ def stock_export(request: Request, db: Session = Depends(get_db)):
 
 @app.get("/locations")
 def location_list(request: Request, db: Session = Depends(get_db)):
-    return render(request, "locations.html", locations=all_locations(db))
+    last_updated = dict(db.execute(
+        select(Movement.location_id, func.max(Movement.created_at)).group_by(Movement.location_id)
+    ).all())
+    totals = dict(db.execute(
+        select(Stock.location_id, func.sum(Stock.quantity)).group_by(Stock.location_id)
+    ).all())
+    return render(request, "locations.html", locations=all_locations(db), last_updated=last_updated,
+                  totals=totals)
+
+
+def _store_report(request: Request, db: Session, location: Location):
+    p = request.query_params
+    return services.store_report(db, location, brand=p.get("brand", ""), q=(p.get("q") or "").strip())
+
+
+@app.get("/locations/{location_id}")
+def location_detail(request: Request, location_id: int, db: Session = Depends(get_db)):
+    location = get_or_404(db, Location, location_id)
+    report = _store_report(request, db, location)
+    last = db.scalar(select(func.max(Movement.created_at)).where(Movement.location_id == location.id))
+    return render(request, "location_detail.html", location=location, report=report, last_updated=last,
+                  brand=request.query_params.get("brand", ""), q=request.query_params.get("q", ""),
+                  show_dates=request.query_params.get("dates") != "0")
+
+
+@app.get("/locations/{location_id}/export.xlsx")
+def location_export(request: Request, location_id: int, db: Session = Depends(get_db)):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+
+    location = get_or_404(db, Location, location_id)
+    report = _store_report(request, db, location)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = location.name[:31]
+    dates = report.delivery_dates
+    ws.append(["ブランド", "商品名", "JANコード", "上代（税込）"]
+              + [f"{d:%y/%m/%d} 納品" for d in dates]
+              + ["納品数 合計", "販売数", "在庫更新差分", "在庫数", "消化率", "販売金額（上代）", "在庫金額（上代）"])
+    for c in ws[1]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", fgColor="1F4E9E")
+    for r in report.rows:
+        ws.append([r.product.brand, r.product.name, r.product.jan, r.product.price]
+                  + [r.deliveries.get(d) for d in dates]
+                  + [r.delivered, r.sold, r.adjusted or None, r.stock, r.sell_through,
+                     r.sales_amount, r.stock_amount])
+    last_col = ws.max_column
+    for row in ws.iter_rows(min_row=2):
+        row[2].number_format = "@"
+        row[last_col - 3].number_format = "0.0%"
+        for c in (row[3], row[last_col - 2], row[last_col - 1]):
+            c.number_format = "#,##0"
+    ws.freeze_panes = "C2"
+    for col, width in zip("ABCD", (18, 40, 16, 12)):
+        ws.column_dimensions[col].width = width
+    return xlsx_response(wb, "store_report.xlsx")
 
 
 @app.post("/locations")
@@ -224,14 +288,19 @@ def product_list(request: Request, q: str = "", db: Session = Depends(get_db)):
         q,
     )
     page = services.paginate(db, stmt, page_param(request), per_page=50, scalars=False)
-    return render(request, "products.html", page=page, q=q,
+    brands = db.scalars(select(Product.brand).where(Product.brand != "").distinct().order_by(Product.brand)).all()
+    return render(request, "products.html", page=page, q=q, brands=brands,
                   prefill_jan=request.query_params.get("jan", ""))
+
+
+def price_or_none(value: str) -> int | None:
+    return importers.parse_quantity(value) if value.strip() else None
 
 
 @app.post("/products")
 def product_create(
     jan: str = Form(...), name: str = Form(...), sku: str = Form(""), unit: str = Form("個"),
-    note: str = Form(""), db: Session = Depends(get_db),
+    brand: str = Form(""), price: str = Form(""), note: str = Form(""), db: Session = Depends(get_db),
 ):
     code, err = jancode.try_normalize(jan)
     if err:
@@ -239,7 +308,8 @@ def product_create(
     name = name.strip()
     if not name:
         return redirect("/products", error="商品名を入力してください", jan=jan)
-    product = Product(jan=code, name=name, sku=sku.strip(), unit=unit.strip() or "個", note=note)
+    product = Product(jan=code, name=name, sku=sku.strip(), unit=unit.strip() or "個", note=note,
+                      brand=brand.strip(), price=price_or_none(price))
     db.add(product)
     try:
         db.commit()
@@ -278,33 +348,6 @@ def product_template():
     return xlsx_response(xlsx_templates.product_master_workbook(), "product_master.xlsx")
 
 
-@app.get("/api/products/lookup")
-def product_lookup(code: str = "", db: Session = Depends(get_db)):
-    """JAN（または品番）から商品と拠点別在庫を返す。バーコード入力用。"""
-    code = code.strip()
-    is_jan = code.isdigit() or not code
-    product, _, err = services.find_product(db, code if is_jan else "", "" if is_jan else code)
-    if product is None:
-        return JSONResponse({"found": False, "error": err or "このJANコードの商品は未登録です"}, status_code=404)
-    stocks = db.scalars(
-        select(Stock).join(Stock.location).where(Stock.product_id == product.id)
-        .order_by(Location.region, Location.type, Location.name)
-    ).all()
-    return {
-        "found": True, "id": product.id, "jan": product.jan, "sku": product.sku, "name": product.name,
-        "unit": product.unit,
-        "stocks": {str(s.location_id): s.quantity for s in stocks},
-    }
-
-
-@app.get("/api/products/search")
-def product_suggest(q: str = "", db: Session = Depends(get_db)):
-    if len(q.strip()) < 1:
-        return []
-    rows = db.scalars(services.product_search(select(Product).order_by(Product.name), q).limit(10)).all()
-    return [{"jan": p.jan, "sku": p.sku, "name": p.name} for p in rows]
-
-
 @app.get("/products/{product_id}")
 def product_detail(request: Request, product_id: int, db: Session = Depends(get_db)):
     product = get_or_404(db, Product, product_id)
@@ -313,7 +356,8 @@ def product_detail(request: Request, product_id: int, db: Session = Depends(get_
         .order_by(Location.region, Location.type, Location.name)
     ).all()
     movements = db.scalars(
-        select(Movement).where(Movement.product_id == product.id).order_by(Movement.id.desc()).limit(100)
+        select(Movement).where(Movement.product_id == product.id)
+        .order_by(func.coalesce(Movement.date, func.date(Movement.created_at)).desc(), Movement.id.desc()).limit(100)
     ).all()
     return render(request, "product_detail.html", product=product, stocks=stocks, movements=movements,
                   total=sum(s.quantity for s in stocks))
@@ -322,7 +366,7 @@ def product_detail(request: Request, product_id: int, db: Session = Depends(get_
 @app.post("/products/{product_id}")
 def product_update(
     product_id: int, jan: str = Form(...), name: str = Form(...), sku: str = Form(""), unit: str = Form("個"),
-    note: str = Form(""), db: Session = Depends(get_db),
+    brand: str = Form(""), price: str = Form(""), note: str = Form(""), db: Session = Depends(get_db),
 ):
     product = get_or_404(db, Product, product_id)
     code, err = jancode.try_normalize(jan)
@@ -332,6 +376,7 @@ def product_update(
         return redirect(f"/products/{product_id}", error="商品名を入力してください")
     product.jan, product.sku, product.name = code, sku.strip(), name.strip()
     product.unit, product.note = unit.strip() or "個", note
+    product.brand, product.price = brand.strip(), price_or_none(price)
     try:
         db.commit()
     except IntegrityError:
@@ -350,61 +395,7 @@ def product_delete(product_id: int, db: Session = Depends(get_db)):
     return redirect("/products", msg="商品を削除しました")
 
 
-# ---- 直接入力（入出庫・棚卸・移動） ----------------------------------------------------
-
-@app.get("/movements/new")
-def movement_form(request: Request, db: Session = Depends(get_db)):
-    p = request.query_params
-    return render(
-        request, "movement_form.html", locations=all_locations(db),
-        has_products=db.scalar(select(func.count(Product.id))) > 0,
-        selected_kind=p.get("kind") or "IN",
-        selected_location=int_or_none(p.get("location_id")),
-        selected_to=int_or_none(p.get("to_location_id")),
-        prefill_code=p.get("code", ""),
-        last=int_or_none(p.get("last")),
-    )
-
-
-@app.post("/movements")
-def movement_create(
-    kind: str = Form(...),
-    code: str = Form(...),
-    location_id: int = Form(...),
-    quantity: int = Form(...),
-    to_location_id: str = Form(""),
-    note: str = Form(""),
-    db: Session = Depends(get_db),
-):
-    location = get_or_404(db, Location, location_id)
-    keep = dict(kind=kind, location_id=location_id, to_location_id=to_location_id)
-    code = code.strip()
-    is_jan = code.isdigit()
-    product, _, err = services.find_product(db, code if is_jan else "", "" if is_jan else code)
-    if product is None:
-        return redirect("/movements/new", error=err or f"JANコード「{code}」の商品は未登録です", code=code, **keep)
-    try:
-        if kind == "TRANSFER":
-            dst_id = int_or_none(to_location_id)
-            if dst_id is None:
-                raise StockError("移動先を選択してください")
-            services.transfer(db, product=product, src=location, dst=get_or_404(db, Location, dst_id),
-                              quantity=quantity, note=note)
-            label = "移動"
-        else:
-            mk = enum_or_none(MovementKind, kind)
-            if mk not in (MovementKind.IN, MovementKind.OUT, MovementKind.SET):
-                raise StockError("区分が不正です")
-            services.apply_movement(db, product=product, location=location, kind=mk, quantity=quantity,
-                                    note=note)
-            label = mk.label
-        db.commit()
-    except StockError as e:
-        db.rollback()
-        return redirect("/movements/new", error=str(e), code=code, **keep)
-    return redirect("/movements/new", msg=f"{product.name}：{label} {quantity}{product.unit} を登録しました",
-                    last=product.id, **keep)
-
+# ---- 入出庫履歴 -------------------------------------------------------------------
 
 @app.get("/movements")
 def movement_list(request: Request, db: Session = Depends(get_db)):
@@ -436,13 +427,15 @@ def movement_list(request: Request, db: Session = Depends(get_db)):
 
 # ---- ファイル取込（Excel / CSV / PDF） ---------------------------------------------
 
-IMPORT_KINDS = (MovementKind.IN, MovementKind.OUT, MovementKind.SET)
+IMPORT_KINDS = (MovementKind.SET, MovementKind.IN, MovementKind.OUT)
 
 
 @app.get("/imports")
 def import_index(request: Request, db: Session = Depends(get_db)):
     batches = db.scalars(select(ImportBatch).order_by(ImportBatch.id.desc()).limit(50)).all()
-    return render(request, "imports.html", batches=batches, locations=all_locations(db), kinds=IMPORT_KINDS)
+    return render(request, "imports.html", batches=batches, locations=all_locations(db), kinds=IMPORT_KINDS,
+                  selected_location=int_or_none(request.query_params.get("location_id")),
+                  selected_kind=request.query_params.get("kind") or "SET", today=date.today().isoformat())
 
 
 @app.get("/imports/template.xlsx")
@@ -455,6 +448,8 @@ async def import_upload(
     file: UploadFile = File(...),
     kind: str = Form(...),
     location_id: str = Form(""),
+    zero_missing: str = Form(""),
+    on: str = Form(""),
     db: Session = Depends(get_db),
 ):
     mk = enum_or_none(MovementKind, kind)
@@ -474,7 +469,9 @@ async def import_upload(
     if loc_id is not None:
         get_or_404(db, Location, loc_id)
     batch = ImportBatch(filename=filename, source=Source(source), kind=mk, location_id=loc_id,
-                        rows=parsed.rows, warnings=parsed.warnings)
+                        rows=parsed.rows, warnings=parsed.warnings,
+                        zero_missing=(mk == MovementKind.SET and zero_missing == "1"),
+                        date=parse_date(on) or date.today())
     db.add(batch)
     db.commit()
     return redirect(f"/imports/{batch.id}")
@@ -484,8 +481,10 @@ async def import_upload(
 def import_preview(request: Request, batch_id: int, db: Session = Depends(get_db)):
     batch = get_or_404(db, ImportBatch, batch_id)
     preview = services.validate_batch(db, batch) if batch.status == "pending" else []
+    missing = services.missing_stocks(db, batch, preview) if preview else []
     return render(
         request, "import_preview.html", batch=batch, preview=preview, locations=all_locations(db),
+        missing=missing,
         ok_count=sum(1 for p in preview if not p["errors"]),
         new_products=sum(1 for p in preview if not p["errors"] and p["product"] is None),
     )
@@ -504,12 +503,14 @@ def import_set_location(batch_id: int, location_id: str = Form(""), db: Session 
 def import_apply(batch_id: int, db: Session = Depends(get_db)):
     batch = get_or_404(db, ImportBatch, batch_id)
     try:
-        applied, skipped = services.apply_batch(db, batch)
+        applied, skipped, zeroed = services.apply_batch(db, batch)
         db.commit()
     except StockError as e:
         db.rollback()
         return redirect(f"/imports/{batch_id}", error=str(e))
     msg = f"{applied}件を反映しました" + (f"（エラー {skipped}件はスキップ）" if skipped else "")
+    if zeroed:
+        msg += f"。ファイルにない {zeroed}件を0にしました"
     return redirect(f"/imports/{batch_id}", msg=msg)
 
 

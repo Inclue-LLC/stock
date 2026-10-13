@@ -1,8 +1,31 @@
 {% extends "base.html" %}
-{% from "_macros.html" import icon, badge, empty %}
+{% from "_macros.html" import icon, badge, n, empty %}
 {% block title %}拠点{% endblock %}
-{% block subtitle %}<p class="sub">倉庫・委託店舗を、日本／中国の地域ごとに登録します</p>{% endblock %}
+{% block subtitle %}<p class="sub">拠点名をクリックすると、納品・販売・在庫の明細を表示します。在庫は「在庫を更新」からファイルで更新します</p>{% endblock %}
 {% block content %}
+<section class="card">
+  {% if locations %}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>拠点</th><th>区分</th><th class="r">在庫数</th><th>最終更新</th><th></th></tr></thead>
+    <tbody>
+    {% for l in locations %}
+      <tr>
+        <td class="name"><a href="/locations/{{ l.id }}">{{ l.name }}</a>{% if l.note %}<span class="sub">{{ l.note }}</span>{% endif %}</td>
+        <td>{{ badge(l) }}</td>
+        <td class="r"><b>{{ n(totals.get(l.id) or 0) }}</b></td>
+        <td class="muted nowrap">{{ last_updated[l.id].strftime("%Y-%m-%d %H:%M") if l.id in last_updated else "未更新" }}</td>
+        <td class="r"><a class="btn sm" href="/imports?location_id={{ l.id }}">{{ icon("upload") }}在庫を更新</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  {{ empty("拠点はまだありません。下のフォームから追加してください。") }}
+  {% endif %}
+</section>
+
 <section class="card">
   <div class="card-head"><h2>拠点を追加</h2></div>
   <form method="post" action="/locations" class="card-body toolbar">
@@ -14,31 +37,32 @@
   </form>
 </section>
 
+{% if locations %}
 <section class="card">
-  {% if locations %}
-  <div class="table-wrap">
-  <table>
-    <thead><tr><th>拠点名</th><th>地域</th><th>種別</th><th>備考</th><th></th></tr></thead>
-    <tbody>
-    {% for l in locations %}
-      <tr>
-        <td><input name="name" value="{{ l.name }}" required form="loc-{{ l.id }}"></td>
-        <td><select name="region" form="loc-{{ l.id }}">{% for r in Region %}<option value="{{ r.value }}" {% if l.region == r %}selected{% endif %}>{{ r.label }}</option>{% endfor %}</select></td>
-        <td><select name="type" form="loc-{{ l.id }}">{% for t in LocationType %}<option value="{{ t.value }}" {% if l.type == t %}selected{% endif %}>{{ t.label }}</option>{% endfor %}</select></td>
-        <td><input name="note" value="{{ l.note }}" form="loc-{{ l.id }}"></td>
-        <td class="nowrap r">
-          <form id="loc-{{ l.id }}" method="post" action="/locations/{{ l.id }}" class="actions" style="justify-content:flex-end">
-            <button class="ghost sm">保存</button>
-            <button class="danger sm" formaction="/locations/{{ l.id }}/delete" formnovalidate onclick="return confirm('この拠点を削除しますか？')">削除</button>
-          </form>
-        </td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  </div>
-  {% else %}
-  {{ empty("拠点はまだありません。上のフォームから追加してください。") }}
-  {% endif %}
+  <details class="more card-body">
+    <summary>拠点名・区分を編集する</summary>
+    <div class="table-wrap" style="margin-top:12px">
+    <table>
+      <thead><tr><th>拠点名</th><th>地域</th><th>種別</th><th>備考</th><th></th></tr></thead>
+      <tbody>
+      {% for l in locations %}
+        <tr>
+          <td><input name="name" value="{{ l.name }}" required form="loc-{{ l.id }}"></td>
+          <td><select name="region" form="loc-{{ l.id }}">{% for r in Region %}<option value="{{ r.value }}" {% if l.region == r %}selected{% endif %}>{{ r.label }}</option>{% endfor %}</select></td>
+          <td><select name="type" form="loc-{{ l.id }}">{% for t in LocationType %}<option value="{{ t.value }}" {% if l.type == t %}selected{% endif %}>{{ t.label }}</option>{% endfor %}</select></td>
+          <td><input name="note" value="{{ l.note }}" form="loc-{{ l.id }}"></td>
+          <td class="nowrap r">
+            <form id="loc-{{ l.id }}" method="post" action="/locations/{{ l.id }}" class="actions" style="justify-content:flex-end">
+              <button class="ghost sm">保存</button>
+              <button class="danger sm" formaction="/locations/{{ l.id }}/delete" formnovalidate onclick="return confirm('この拠点を削除しますか？')">削除</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </details>
 </section>
+{% endif %}
 {% endblock %}

@@ -33,10 +33,17 @@ def prod(code):
         return db.scalar(select(Product).where(Product.jan == code))
 
 
-def move(client, kind, quantity, loc="東京倉庫", code=JAN_A, **extra):
-    return client.post("/movements", data={
-        "kind": kind, "code": code, "location_id": loc_id(loc), "quantity": quantity, **extra,
-    })
+def move(client, kind, quantity, loc="東京倉庫", code=JAN_A, on=None):
+    """在庫の増減（直接入力は廃止したので、サービス層を直接呼ぶ）。"""
+    from app import services
+    from app.models import MovementKind
+
+    with SessionLocal() as db:
+        product = db.scalar(select(Product).where(Product.jan == code))
+        location = db.scalar(select(Location).where(Location.name == loc))
+        services.apply_movement(db, product=product, location=location, kind=MovementKind(kind),
+                                quantity=quantity, on=on)
+        db.commit()
 
 
 # ---- JAN -----------------------------------------------------------------------
@@ -64,7 +71,8 @@ def test_jan_invalid(value):
 def test_pages_render(seeded):
     move(seeded, "IN", 1)
     for path in ["/", "/stocks", "/stocks?view=location", "/products", "/locations", "/movements",
-                 "/movements/new", "/imports", f"/products/{prod(JAN_A).id}"]:
+                 "/imports", f"/products/{prod(JAN_A).id}", f"/locations/{loc_id('東京倉庫')}",
+                 f"/locations/{loc_id('北京委託店')}"]:
         assert seeded.get(path).status_code == 200, path
 
 
@@ -75,41 +83,6 @@ def test_product_create_validates_jan(seeded):
     assert "すでに登録" in r.text
     seeded.post("/products", data={"jan": "４９０００００００００２３", "name": "商品B"})
     assert prod(JAN_B).name == "商品B"
-
-
-def test_lookup_api(seeded):
-    move(seeded, "IN", 4)
-    r = seeded.get("/api/products/lookup", params={"code": JAN_A}).json()
-    assert r["name"] == "商品A" and r["stocks"][str(loc_id("東京倉庫"))] == 4
-    assert seeded.get("/api/products/lookup", params={"code": "A-001"}).json()["jan"] == JAN_A
-    assert seeded.get("/api/products/lookup", params={"code": JAN_B}).status_code == 404
-    assert seeded.get("/api/products/search", params={"q": "商品"}).json()[0]["jan"] == JAN_A
-
-
-# ---- 直接入力 --------------------------------------------------------------------
-
-def test_manual_in_out_set_transfer(seeded):
-    move(seeded, "IN", 10)
-    assert qty(JAN_A, "東京倉庫") == 10
-    move(seeded, "OUT", 3, code="A-001")  # 品番でも指定できる
-    assert qty(JAN_A, "東京倉庫") == 7
-    move(seeded, "TRANSFER", 5, to_location_id=loc_id("大阪委託店"))
-    assert qty(JAN_A, "東京倉庫") == 2
-    assert qty(JAN_A, "大阪委託店") == 5
-    move(seeded, "SET", 4, loc="大阪委託店")
-    assert qty(JAN_A, "大阪委託店") == 4
-
-
-def test_manual_unknown_jan(seeded):
-    r = move(seeded, "IN", 1, code=JAN_B)
-    assert "未登録" in r.text
-
-
-def test_out_more_than_stock_is_rejected(seeded):
-    move(seeded, "IN", 2)
-    r = move(seeded, "OUT", 5)
-    assert "在庫が不足" in r.text
-    assert qty(JAN_A, "東京倉庫") == 2
 
 
 def test_home_redirects_to_stocks_and_stock_views(seeded):
@@ -168,15 +141,16 @@ def test_product_master_template_roundtrip(seeded):
 
     wb = load_workbook(io.BytesIO(seeded.get("/products/template.xlsx").content))
     ws = wb["商品マスタ"]
-    assert [c.value for c in ws[1]][:5] == ["JANコード", "商品名", "品番", "単位", "備考"]
+    assert [c.value for c in ws[1]][:7] == ["JANコード", "商品名", "ブランド", "上代（税込）", "品番", "単位", "備考"]
     assert ws["A2"].number_format == "@"
-    ws["A2"], ws["B2"], ws["D2"] = JAN_B, "商品B", "箱"
+    ws["A2"], ws["B2"], ws["C2"], ws["D2"], ws["F2"] = JAN_B, "商品B", "Studio Haneul", 1650, "箱"
     ws["A3"], ws["B3"] = JAN_C, "商品C"
     buf = io.BytesIO()
     wb.save(buf)
     r = seeded.post("/products/import", files={"file": ("master.xlsx", buf.getvalue())})
     assert "新規 2件" in r.text and "エラー" not in r.text
-    assert prod(JAN_B).unit == "箱" and prod(JAN_C).name == "商品C"
+    b = prod(JAN_B)
+    assert (b.unit, b.brand, b.price) == ("箱", "Studio Haneul", 1650) and prod(JAN_C).name == "商品C"
 
 
 # ---- 在庫取込 --------------------------------------------------------------------
@@ -230,7 +204,7 @@ def test_csv_import_chinese_headers_set(seeded):
 
 def test_import_out_flags_insufficient_stock(seeded):
     move(seeded, "IN", 3)
-    data = xlsx([["JAN", "数量"], [JAN_A, 2], [JAN_A, 2]])
+    data = xlsx([["JAN", "販売数"], [JAN_A, 2], [JAN_A, 2]])
     batch_id, html = upload(seeded, "out.xlsx", data, kind="OUT", location="東京倉庫")
     assert "在庫不足" in html
     seeded.post(f"/imports/{batch_id}/apply")
@@ -268,3 +242,64 @@ def test_exports_and_templates(seeded):
 def test_unsupported_file(seeded):
     r = seeded.post("/imports", data={"kind": "IN"}, files={"file": ("a.txt", b"x")})
     assert "対応形式" in r.text
+
+
+def test_store_report(seeded):
+    from datetime import date
+
+    seeded.post("/products", data={"jan": JAN_B, "name": "商品B", "brand": "Lovely MongMong", "price": "1,650"})
+    # 納品（日付別）→ 販売 → 残数報告（在庫更新）
+    data = xlsx([["JANコード", "商品名", "ブランド", "上代（税込）", "数量"],
+                 [JAN_A, "商品A", "Studio Haneul", 330, 20], [JAN_B, "商品B", None, None, 10]])
+    r = seeded.post("/imports", data={"kind": "IN", "location_id": loc_id("大阪委託店"), "on": "2025-09-26"},
+                    files={"file": ("d1.xlsx", data)})
+    seeded.post(r.url.path + "/apply")
+    data = xlsx([["JAN", "納品数"], [JAN_A, 10]])
+    r = seeded.post("/imports", data={"kind": "IN", "location_id": loc_id("大阪委託店"), "on": "2025-11-09"},
+                    files={"file": ("d2.xlsx", data)})
+    seeded.post(r.url.path + "/apply")
+    data = xlsx([["JAN", "販売数"], [JAN_A, 12], [JAN_B, 4]])
+    r = seeded.post("/imports", data={"kind": "OUT", "location_id": loc_id("大阪委託店"), "on": "2026-09-30"},
+                    files={"file": ("s.xlsx", data)})
+    seeded.post(r.url.path + "/apply")
+    data = xlsx([["JAN", "残数"], [JAN_A, 17]])
+    r = seeded.post("/imports", data={"kind": "SET", "location_id": loc_id("大阪委託店"), "on": "2026-09-30"},
+                    files={"file": ("z.xlsx", data)})
+    seeded.post(r.url.path + "/apply")
+
+    a = prod(JAN_A)
+    assert (a.brand, a.price) == ("Studio Haneul", 330)  # 取込ファイルからマスタの空欄を補完
+
+    from app import services
+    with SessionLocal() as db:
+        loc = db.get(Location, loc_id("大阪委託店"))
+        rep = services.store_report(db, loc)
+        rows = {r.product.jan: r for r in rep.rows}
+        assert rep.delivery_dates == [date(2025, 9, 26), date(2025, 11, 9)]
+        ra = rows[JAN_A]
+        assert (ra.delivered, ra.sold, ra.adjusted, ra.stock) == (30, 12, -1, 17)
+        assert ra.deliveries == {date(2025, 9, 26): 20, date(2025, 11, 9): 10}
+        assert ra.sell_through == 0.4 and ra.sales_amount == 12 * 330
+        assert rows[JAN_B].sales_amount == 4 * 1650
+        assert rep.brands == ["Lovely MongMong", "Studio Haneul"]
+        assert [r.product.jan for r in services.store_report(db, loc, brand="Lovely MongMong").rows] == [JAN_B]
+
+    html = seeded.get(f"/locations/{loc_id('大阪委託店')}").text
+    assert "25/09/26" in html and "40%" in html and "Lovely MongMong" in html
+    x = seeded.get(f"/locations/{loc_id('大阪委託店')}/export.xlsx")
+    assert x.status_code == 200 and x.content[:2] == b"PK"
+
+
+def test_zero_missing_on_full_stock_update(seeded):
+    seeded.post("/products", data={"jan": JAN_B, "name": "商品B"})
+    move(seeded, "IN", 5, loc="大阪委託店")
+    move(seeded, "IN", 3, loc="大阪委託店", code=JAN_B)
+    move(seeded, "IN", 9, loc="東京倉庫", code=JAN_B)
+    data = xlsx([["JAN", "在庫数"], [JAN_A, 4]])
+    r = seeded.post("/imports", data={"kind": "SET", "location_id": loc_id("大阪委託店"), "zero_missing": "1"},
+                    files={"file": ("all.xlsx", data)})
+    assert "1件の在庫を0にします" in r.text
+    r = seeded.post(r.url.path + "/apply")
+    assert "ファイルにない 1件を0にしました" in r.text
+    assert qty(JAN_A, "大阪委託店") == 4 and qty(JAN_B, "大阪委託店") == 0
+    assert qty(JAN_B, "東京倉庫") == 9  # 他の拠点は変わらない

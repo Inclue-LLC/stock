@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon, location_options, empty %}
-{% block title %}ファイル取込{% endblock %}
-{% block subtitle %}<p class="sub">Excel・CSV・PDF の在庫明細を読み込み、確認してから反映します</p>{% endblock %}
+{% block title %}在庫の更新{% endblock %}
+{% block subtitle %}<p class="sub">倉庫・委託店舗の在庫を、Excel・CSV・PDF から更新します（確認画面のあと反映）</p>{% endblock %}
 {% block content %}
 <div class="grid two">
   <section class="card">
@@ -13,16 +13,19 @@
         <div class="fname"></div>
         <input type="file" name="file" accept=".xlsx,.xlsm,.csv,.pdf" required>
       </label>
-      <div class="field"><span>区分</span>
-        <div class="segmented">
+      <label class="field"><span>拠点</span>
+        <select name="location_id">{{ location_options(locations, selected_location, "ファイル内の「拠点」列を使う") }}</select>
+      </label>
+      {% set kind_labels = {"SET": "在庫数を上書き", "IN": "納品・入庫（加算）", "OUT": "販売・出庫（減算）"} %}
+      <div class="field"><span>反映のしかた</span>
+        <div class="segmented" id="kinds">
           {% for k in kinds %}
-          <label><input type="radio" name="kind" value="{{ k.value }}" {% if loop.first %}checked{% endif %}><span>{{ k.label }}{% if k == MovementKind.SET %}（上書き）{% endif %}</span></label>
+          <label><input type="radio" name="kind" value="{{ k.value }}" {% if selected_kind == k.value %}checked{% endif %}><span>{{ kind_labels[k.value] }}</span></label>
           {% endfor %}
         </div>
       </div>
-      <label class="field"><span>拠点</span>
-        <select name="location_id">{{ location_options(locations, None, "ファイル内の「拠点」列を使う") }}</select>
-      </label>
+      <label class="field" style="max-width: 220px"><span>日付（納品日・報告日など）</span><input type="date" name="on" value="{{ today }}"></label>
+      <label class="check" id="zero"><input type="checkbox" name="zero_missing" value="1"> ファイルにない商品の在庫を0にする（拠点の全在庫リストを取り込むとき）</label>
       <div><button class="lg">読み込んで確認する{{ icon("arrow") }}</button></div>
     </form>
   </section>
@@ -64,4 +67,9 @@
   {% endif %}
 </section>
 <script src="/static/dropzone.js"></script>
+<script>
+  const kinds = document.getElementById('kinds'), zero = document.getElementById('zero');
+  const sync = () => { zero.hidden = kinds.querySelector('input:checked').value !== 'SET'; };
+  kinds.addEventListener('change', sync); sync();
+</script>
 {% endblock %}

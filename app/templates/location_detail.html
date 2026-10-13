@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, badge, n, empty %}
+{% block title %}{{ location.name }}{% endblock %}
+{% block subtitle %}<p class="sub">{{ badge(location) }}　最終更新 {{ last_updated.strftime("%Y-%m-%d %H:%M") if last_updated else "なし" }}</p>{% endblock %}
+{% block actions %}
+<a class="btn ghost" href="/locations/{{ location.id }}/export.xlsx{{ url_with() if url_with().startswith('?') else '' }}">{{ icon("download") }}Excel出力</a>
+<a class="btn" href="/imports?location_id={{ location.id }}">{{ icon("upload") }}在庫を更新</a>
+{% endblock %}
+{% macro pct(v) -%}{{ "%.0f%%"|format(v * 100) if v is not none else "–" }}{%- endmacro %}
+{% macro yen(v) -%}{{ "¥{:,}".format(v) if v is not none else "–" }}{%- endmacro %}
+{% block content %}
+{% set rows = report.rows %}
+<div class="metrics">
+  <div class="metric"><span>納品数</span><b>{{ n(report.total("delivered")) }}</b></div>
+  <div class="metric"><span>販売数</span><b>{{ n(report.total("sold")) }}</b></div>
+  <div class="metric"><span>在庫数</span><b>{{ n(report.total("stock")) }}</b></div>
+  <div class="metric"><span>消化率</span><b>{{ pct(report.sell_through) }}</b>
+    <i class="meter"><i style="width: {{ (report.sell_through or 0) * 100 }}%"></i></i></div>
+  <div class="metric"><span>販売金額（上代）</span><b>{{ yen(report.total("sales_amount")) }}</b></div>
+  <div class="metric"><span>在庫金額（上代）</span><b>{{ yen(report.total("stock_amount")) }}</b></div>
+</div>
+
+<section class="card">
+  <form class="toolbar" method="get">
+    {% if report.brands %}
+    <div class="tabs">
+      <a href="{{ url_with(brand=None) }}" class="{{ 'active' if not brand }}">すべて</a>
+      {% for b in report.brands %}<a href="{{ url_with(brand=b) }}" class="{{ 'active' if brand == b }}">{{ b }}</a>{% endfor %}
+    </div>
+    {% endif %}
+    {% if brand %}<input type="hidden" name="brand" value="{{ brand }}">{% endif %}
+    <label class="search grow">{{ icon("search") }}<input type="search" name="q" value="{{ q }}" placeholder="商品名・JANコードで検索"></label>
+    {% if report.delivery_dates %}
+    <label class="check"><input type="checkbox" name="dates" value="0" {% if not show_dates %}checked{% endif %} onchange="this.form.submit()"> 納品日ごとの列を隠す</label>
+    {% endif %}
+    <button class="ghost">検索</button>
+  </form>
+
+  {% if rows %}
+  {% set dates = report.delivery_dates if show_dates else [] %}
+  {% set has_adj = rows | selectattr("adjusted") | list %}
+  <div class="table-wrap">
+  <table class="report">
+    <thead>
+      <tr>
+        <th class="stick">商品</th>
+        <th class="r">上代</th>
+        {% for d in dates %}<th class="r date">{{ d.strftime("%y/%m/%d") }}<br><span class="muted">納品</span></th>{% endfor %}
+        <th class="r grp">納品 計</th>
+        <th class="r">販売</th>
+        {% if has_adj %}<th class="r" title="在庫更新（棚卸・残数報告）による差分">調整</th>{% endif %}
+        <th class="r">在庫</th>
+        <th>消化率</th>
+        <th class="r">販売金額</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for brand_name, group in rows | groupby("product.brand") %}
+      {% if not brand and report.brands %}
+      <tr class="group-row">
+        <td class="stick" colspan="{{ 2 + dates|length }}"><b>{{ brand_name or "ブランド未設定" }}</b> <span class="muted">{{ group|length }}商品</span></td>
+        <td class="r grp">{{ n(group|sum(attribute="delivered")) }}</td>
+        <td class="r">{{ n(group|sum(attribute="sold")) }}</td>
+        {% if has_adj %}<td class="r">{{ n(group|sum(attribute="adjusted")) }}</td>{% endif %}
+        <td class="r">{{ n(group|sum(attribute="stock")) }}</td>
+        <td colspan="2"></td>
+      </tr>
+      {% endif %}
+      {% for r in group %}
+      <tr>
+        <td class="stick name"><a href="/products/{{ r.product.id }}">{{ r.product.name }}</a><span class="sub mono">{{ r.product.jan }}</span></td>
+        <td class="r muted">{{ "{:,}".format(r.product.price) if r.product.price is not none else "–" }}</td>
+        {% for d in dates %}{% set v = r.deliveries.get(d) %}<td class="r date {{ 'zero' if not v }}">{{ n(v) if v else "" }}</td>{% endfor %}
+        <td class="r grp"><b>{{ n(r.delivered) }}</b></td>
+        <td class="r">{{ n(r.sold) if r.sold else "–" }}</td>
+        {% if has_adj %}<td class="r {{ 'neg' if r.adjusted < 0 }}">{{ "{:+,}".format(r.adjusted) if r.adjusted else "" }}</td>{% endif %}
+        <td class="r">{% if r.stock == 0 %}<span class="chip out">在庫切れ</span>{% else %}<b>{{ n(r.stock) }}</b>{% endif %}</td>
+        <td class="st">{% if r.sell_through is not none %}<span class="meter sm"><i style="width: {{ [r.sell_through, 1]|min * 100 }}%" class="{{ 'hot' if r.sell_through >= 0.8 }}"></i></span><span class="pct">{{ pct(r.sell_through) }}</span>{% else %}<span class="muted">–</span>{% endif %}</td>
+        <td class="r">{{ yen(r.sales_amount) if r.sold else "–" }}</td>
+      </tr>
+      {% endfor %}
+    {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td class="stick">合計 <span class="muted">{{ rows|length }}商品</span></td>
+        <td></td>
+        {% for d in dates %}<td class="r date">{{ n(report.delivery_total(d)) }}</td>{% endfor %}
+        <td class="r grp">{{ n(report.total("delivered")) }}</td>
+        <td class="r">{{ n(report.total("sold")) }}</td>
+        {% if has_adj %}<td class="r">{{ "{:+,}".format(report.total("adjusted")) }}</td>{% endif %}
+        <td class="r">{{ n(report.total("stock")) }}</td>
+        <td>{{ pct(report.sell_through) }}</td>
+        <td class="r">{{ yen(report.total("sales_amount")) }}</td>
+      </tr>
+    </tfoot>
+  </table>
+  </div>
+  {% else %}
+  {{ empty("この拠点にはまだ在庫・納品の記録がありません。", "/imports?location_id=" ~ location.id, "ファイルから更新する") }}
+  {% endif %}
+</section>
+<p class="hint">消化率 ＝ 販売数 ÷ 納品数。調整 ＝「在庫を更新（上書き）」で数量を合わせたときの差分（ロス・棚差など）。</p>
+{% endblock %}

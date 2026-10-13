@@ -1,13 +1,14 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon, location_options, n, empty %}
-{% block title %}取込の確認{% endblock %}
+{% block title %}更新内容の確認{% endblock %}
 {% block subtitle %}<p class="sub">{{ batch.filename }}</p>{% endblock %}
 {% block content %}
 {% set status_label = {"pending": "未反映", "applied": "反映済", "cancelled": "取消"}[batch.status] %}
 <section class="card">
   <div class="card-body">
     <div class="keyvals">
-      <span>区分 <b>{{ batch.kind.label }}</b></span>
+      <span>反映のしかた <b>{{ {"SET": "在庫数を上書き", "IN": "納品・入庫（加算）", "OUT": "販売・出庫（減算）"}[batch.kind.value] }}</b></span>
+      <span>日付 <b>{{ batch.date.strftime("%Y-%m-%d") if batch.date else "–" }}</b></span>
       <span>形式 <b>{{ batch.source.label }}</b></span>
       <span>行数 <b>{{ batch.rows|length }}</b></span>
       <span>状態 <span class="chip s-{{ batch.status }}">{{ status_label }}</span></span>
@@ -50,9 +51,20 @@
   {% else %}
   {{ empty("読み取れた行はありません。") }}
   {% endif %}
+  {% if missing %}
+  <div class="card-body" style="border-top: 1px solid var(--border)">
+    <details class="more">
+      <summary>ファイルにない商品 {{ missing|length }}件の在庫を0にします（クリックで一覧）</summary>
+      <ul class="steps" style="margin-top:8px">
+        {% for s in missing[:200] %}<li>{{ s.location.name }}：{{ s.product.name }} <span class="mono muted">{{ s.product.jan }}</span>（現在 {{ n(s.quantity) }}）</li>{% endfor %}
+        {% if missing|length > 200 %}<li>ほか {{ missing|length - 200 }}件</li>{% endif %}
+      </ul>
+    </details>
+  </div>
+  {% endif %}
   <div class="card-body actions" style="border-top: 1px solid var(--border)">
     <form method="post" action="/imports/{{ batch.id }}/apply">
-      <button class="lg" {% if not ok_count %}disabled{% endif %}>{{ icon("check") }}{{ ok_count }}件を反映する{% if new_products %}（新規商品 {{ new_products }}件）{% endif %}</button>
+      <button class="lg" {% if not ok_count %}disabled{% endif %}>{{ icon("check") }}{{ ok_count }}件を反映する{% if new_products %}（新規商品 {{ new_products }}件）{% endif %}{% if missing %}・{{ missing|length }}件を0に{% endif %}</button>
     </form>
     <form method="post" action="/imports/{{ batch.id }}/cancel">
       <button class="ghost lg">取り消す</button>
@@ -63,7 +75,7 @@
 {% else %}
 <section class="card"><div class="card-body actions">
   {% if batch.status == "applied" %}<a class="btn" href="/movements?batch_id={{ batch.id }}">反映された履歴を見る</a>{% endif %}
-  <a class="btn ghost" href="/imports">取込画面に戻る</a>
+  <a class="btn ghost" href="/imports">在庫の更新に戻る</a>
 </div></section>
 {% endif %}
 {% endblock %}

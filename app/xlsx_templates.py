@@ -46,23 +46,25 @@ def product_master_workbook(rows: int = 3000) -> Workbook:
     wb = Workbook()
     ws = wb.active
     ws.title = "商品マスタ"
-    columns = [("JANコード", 18), ("商品名", 40), ("品番", 16), ("単位", 9), ("備考", 36), ("JANチェック（自動）", 20)]
-    _header(ws, columns, [REQUIRED_FILL, REQUIRED_FILL, HEADER_FILL, HEADER_FILL, HEADER_FILL, AUTO_FILL])
+    columns = [("JANコード", 18), ("商品名", 40), ("ブランド", 20), ("上代（税込）", 13), ("品番", 16), ("単位", 9),
+               ("備考", 30), ("JANチェック（自動）", 20)]
+    _header(ws, columns, [REQUIRED_FILL, REQUIRED_FILL] + [HEADER_FILL] * 5 + [AUTO_FILL])
     last = rows + 1
 
     body = Font(name=FONT, size=11)
     for r in range(2, last + 1):
-        for col in range(1, 7):
+        for col in range(1, 9):
             c = ws.cell(row=r, column=col)
             c.font = body
             c.border = BORDER
         ws.cell(row=r, column=1).number_format = "@"  # JAN を文字列で保持（指数表記・先頭0落ち防止）
-        ws.cell(row=r, column=3).number_format = "@"
-        chk = ws.cell(row=r, column=6, value=_jan_check_formula(f"A{r}", f"$A$2:$A${last}"))
+        ws.cell(row=r, column=4).number_format = "#,##0"
+        ws.cell(row=r, column=5).number_format = "@"
+        chk = ws.cell(row=r, column=8, value=_jan_check_formula(f"A{r}", f"$A$2:$A${last}"))
         chk.font = Font(name=FONT, size=10, color="595959")
         chk.alignment = Alignment(horizontal="center")
 
-    ws.auto_filter.ref = f"A1:F{last}"
+    ws.auto_filter.ref = f"A1:H{last}"
 
     jan_dv = DataValidation(type="custom", formula1="OR(LEN(A2)=8,LEN(A2)=13)", allow_blank=True,
                             errorStyle="warning", showErrorMessage=True,
@@ -72,15 +74,20 @@ def product_master_workbook(rows: int = 3000) -> Workbook:
     jan_dv.add(f"A2:A{last}")
     unit_dv = DataValidation(type="list", formula1='"' + ",".join(UNITS) + '"', allow_blank=True,
                              errorStyle="information", showErrorMessage=False)
-    unit_dv.add(f"D2:D{last}")
+    unit_dv.add(f"F2:F{last}")
+    price_dv = DataValidation(type="whole", operator="greaterThanOrEqual", formula1="0", allow_blank=True,
+                              errorStyle="warning", showErrorMessage=True, errorTitle="上代",
+                              error="上代は税込の金額（整数）で入力してください。")
+    price_dv.add(f"D2:D{last}")
+    ws.add_data_validation(price_dv)
     ws.add_data_validation(jan_dv)
     ws.add_data_validation(unit_dv)
 
     # JAN の重複・誤りを赤く表示
     ws.conditional_formatting.add(
-        f"A2:A{last}", FormulaRule(formula=[f'AND(A2<>"",F2<>"OK")'], fill=ERROR_FILL))
+        f"A2:A{last}", FormulaRule(formula=[f'AND(A2<>"",H2<>"OK")'], fill=ERROR_FILL))
     ws.conditional_formatting.add(
-        f"F2:F{last}", FormulaRule(formula=['AND(F2<>"",F2<>"OK")'], fill=ERROR_FILL,
+        f"H2:H{last}", FormulaRule(formula=['AND(H2<>"",H2<>"OK")'], fill=ERROR_FILL,
                                    font=Font(name=FONT, color="C0392B", bold=True)))
 
     _product_guide(wb.create_sheet("記入方法"))
@@ -98,7 +105,7 @@ def _product_guide(ws):
     ws["B2"].font = Font(name=FONT, size=16, bold=True)
     notes = [
         "「商品マスタ」シートの2行目から、1行に1商品ずつ入力してください。",
-        "赤い見出しの列（JANコード・商品名）は必須です。青い見出しの列は任意です。",
+        "赤い見出しの列（JANコード・商品名）は必須です。青い見出しの列（ブランド・上代など）は任意です。",
         "灰色の「JANチェック（自動）」列は自動で判定します。「OK」以外が出た行は JAN を見直してください。",
         "JAN の重複・桁数・チェックデジットに問題がある行は、JAN のセルが赤くなります。",
         "入力後、在庫管理システムの「商品マスタ」→「Excel / CSV で一括登録」からこのファイルを取り込みます。",
@@ -115,11 +122,13 @@ def _product_guide(ws):
         c.fill = HEADER_FILL
         c.border = BORDER
     items = [
-        ("JANコード", "必須", "4901234567894", "8桁または13桁の数字。セルは文字列形式なので、先頭の0や13桁もそのまま入力できます。"),
-        ("商品名", "必須", "保湿クリーム 50g", "画面や帳票に表示される名前。"),
+        ("JANコード", "必須", "4580703202780", "8桁または13桁の数字。セルは文字列形式なので、先頭の0や13桁もそのまま入力できます。"),
+        ("商品名", "必須", "むぎゅっとカードホルダー", "画面や帳票に表示される名前。"),
+        ("ブランド", "", "Lovely MongMong", "店舗別画面でブランドごとにまとめて表示します。"),
+        ("上代（税込）", "", "1650", "税込の販売価格（円）。販売金額・在庫金額の計算に使います。"),
         ("品番", "", "SK-001", "社内の品番・型番など。JAN の代わりに品番で取込・入力することもできます。"),
         ("単位", "", "個", "リストから選択（個・本・箱・セット など）。リストにない単位も入力できます。空欄なら「個」。"),
-        ("備考", "", "春限定パッケージ", "自由記入。"),
+        ("備考", "", "", "自由記入。"),
     ]
     for r, row in enumerate(items, start=top + 1):
         for col, v in enumerate(row, start=2):

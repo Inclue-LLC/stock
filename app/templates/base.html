@@ -10,8 +10,7 @@
 <body>
 {% set nav = [
   ("/stocks", "boxes", "在庫一覧"),
-  ("/movements/new", "scan", "直接入力"),
-  ("/imports", "upload", "ファイル取込"),
+  ("/imports", "upload", "在庫の更新"),
   ("/movements", "history", "入出庫履歴"),
   ("/products", "tag", "商品マスタ"),
   ("/locations", "pin", "拠点"),
@@ -21,7 +20,7 @@
     <a class="brand" href="/stocks"><span class="logo">{{ icon("boxes") }}</span><span>在庫管理</span></a>
     <nav>
       {% for href, ic, label in nav %}
-        {% set active = path.startswith(href) and ( not (href == "/movements" and path.startswith("/movements/new"))) %}
+        {% set active = path.startswith(href) %}
         <a href="{{ href }}" class="{{ 'active' if active }}">{{ icon(ic) }}<span>{{ label }}</span></a>
       {% endfor %}
     </nav>

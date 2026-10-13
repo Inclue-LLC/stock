@@ -31,7 +31,7 @@
   {% if view == "product" %}
   <table>
     <thead><tr>
-      <th>商品</th><th>JANコード</th>
+      <th>商品</th><th>ブランド</th><th>JANコード</th>
       {% for r, t in categories %}<th class="r">{{ r.label }}<br><span class="chip t-{{ t.value }}">{{ t.label }}</span></th>{% endfor %}
       <th class="r">合計</th>
     </tr></thead>
@@ -39,6 +39,7 @@
     {% for row in page.items %}{% set p = row[0] %}{% set qtys = row[1:] %}
       <tr>
         <td class="name"><a href="/products/{{ p.id }}">{{ p.name }}</a>{% if p.sku %}<span class="sub">{{ p.sku }}</span>{% endif %}</td>
+        <td>{{ p.brand }}</td>
         <td class="mono">{{ p.jan }}</td>
         {% for q in qtys[:-1] %}<td class="r {{ 'zero' if q == 0 }}">{{ n(q) if q else "–" }}</td>{% endfor %}
         <td class="r"><b>{{ n(qtys[-1]) }}</b></td>
@@ -48,7 +49,7 @@
   </table>
   {% else %}
   <table>
-    <thead><tr><th>商品</th><th>JANコード</th><th>拠点</th><th>区分</th><th class="r">在庫数</th><th></th></tr></thead>
+    <thead><tr><th>商品</th><th>JANコード</th><th>拠点</th><th>区分</th><th class="r">在庫数</th></tr></thead>
     <tbody>
     {% for s in page.items %}
       <tr>
@@ -57,7 +58,6 @@
         <td>{{ s.location.name }}</td>
         <td>{{ badge(s.location) }}</td>
         <td class="r {% if s.quantity < 0 %}neg{% endif %}"><b>{{ n(s.quantity) }}</b> <span class="muted">{{ s.product.unit }}</span></td>
-        <td class="r"><a class="btn ghost sm" href="/movements/new?code={{ s.product.jan }}&location_id={{ s.location_id }}">入出庫</a></td>
       </tr>
     {% endfor %}
     </tbody>

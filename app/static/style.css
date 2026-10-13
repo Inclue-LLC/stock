@@ -250,3 +250,29 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .feed .what .sub { color: var(--muted); font-size: 12px; }
 details.more summary { cursor: pointer; color: var(--accent); font-weight: 600; list-style: none; }
 details.more summary::-webkit-details-marker { display: none; }
+
+/* ---- store report ---- */
+.metrics { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 20px; }
+@media (max-width: 1100px) { .metrics { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 560px) { .metrics { grid-template-columns: repeat(2, 1fr); } }
+.metric { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px; display: flex; flex-direction: column; gap: 2px; }
+.metric span { font-size: 12px; font-weight: 600; color: var(--muted); }
+.metric b { font-size: 22px; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.meter { display: block; height: 6px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; margin-top: 6px; }
+.meter > i { display: block; height: 100%; background: var(--accent); border-radius: 6px; }
+.meter > i.hot { background: var(--ok); }
+.meter.sm { display: inline-block; width: 64px; height: 6px; margin: 0 8px 0 0; vertical-align: middle; }
+td.st { white-space: nowrap; }
+td.st .pct { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--text-2); }
+table.report th, table.report td { padding-top: 9px; padding-bottom: 9px; }
+table.report .stick { position: sticky; left: 0; background: var(--surface); z-index: 1; min-width: 300px; box-shadow: 1px 0 0 var(--border); }
+table.report thead .stick { background: var(--surface-2); }
+table.report tbody tr:hover .stick { background: var(--surface-2); }
+table.report th.date, table.report td.date { color: var(--text-2); font-size: 13px; min-width: 64px; }
+table.report td.date.zero { background: transparent; }
+table.report .grp { border-left: 1px solid var(--border); }
+table.report tr.group-row td { background: var(--accent-soft); font-size: 13px; border-top: 1px solid var(--border); }
+table.report tr.group-row:hover td { background: var(--accent-soft); }
+table.report tfoot td { background: var(--surface-2); }
+table.report tfoot .stick { background: var(--surface-2); }
+.chip.out { background: var(--err-soft); color: var(--err); }

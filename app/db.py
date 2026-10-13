@@ -49,3 +49,22 @@ def init_db():
             f"テストデータのみであれば {DATA_DIR / 'stock.db'} を削除してから再起動してください。"
         )
     Base.metadata.create_all(engine)
+    _add_missing_columns()
+
+
+def _add_missing_columns():
+    """後から追加した列を既存の DB に足す（簡易マイグレーション）。"""
+    from sqlalchemy import text
+
+    added = {
+        "import_batches": {"zero_missing": "BOOLEAN NOT NULL DEFAULT 0", "date": "DATE"},
+        "movements": {"date": "DATE"},
+        "products": {"brand": "VARCHAR(100) NOT NULL DEFAULT ''", "price": "INTEGER"},
+    }
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for table, cols in added.items():
+            existing = {c["name"] for c in insp.get_columns(table)}
+            for name, ddl in cols.items():
+                if name not in existing:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))

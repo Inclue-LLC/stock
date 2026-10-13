@@ -16,10 +16,14 @@ HEADER_ALIASES: dict[str, list[str]] = {
             "item code", "itemcode", "code", "货号", "商品编码", "编码", "编号", "产品编号"],
     "name": ["商品名", "品名", "品目", "品目名", "名称", "製品名", "item", "name", "product", "description",
              "商品名称", "产品名称", "品名称"],
-    "quantity": ["数量", "個数", "在庫数", "在庫", "入庫数", "出庫数", "販売数", "売上数", "qty", "quantity",
-                 "count", "数", "库存", "库存数量", "入库数量", "出库数量", "销售数量"],
+    "quantity": ["数量", "個数", "在庫数", "在庫", "入庫数", "出庫数", "販売数", "売上数", "販売点数", "納品数",
+                 "納品数量", "入荷数", "出荷数", "残数", "残数量", "月末在庫", "期末在庫", "実在庫", "実在庫数",
+                 "qty", "quantity", "count", "数", "库存", "库存数量", "入库数量", "出库数量", "销售数量", "销量"],
     "location": ["拠点", "倉庫", "店舗", "保管場所", "委託先", "location", "warehouse", "store", "仓库", "门店", "店铺"],
     "unit": ["単位", "unit", "单位"],
+    "brand": ["ブランド", "brand", "メーカー", "品牌"],
+    "price": ["上代", "上代（税込）", "上代(税込)", "上代税込", "売価", "売価（税込）", "定価", "販売価格", "価格",
+              "price", "retail price", "零售价", "售价"],
     "note": ["備考", "メモ", "note", "remarks", "备注"],
 }
 
@@ -117,6 +121,8 @@ def rows_from_table(table: list[list], result: ParseResult, label: str = "", req
             "quantity": qty,
             "location": str(location) if location not in (None, "") else None,
             "unit": str(cell(cells, "unit") or ""),
+            "brand": str(cell(cells, "brand") or ""),
+            "price": parse_quantity(cell(cells, "price")),
             "note": str(cell(cells, "note") or ""),
         })
     return True
