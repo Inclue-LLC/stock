@@ -166,7 +166,7 @@ function planData(plan) {
   const data = {};
   for (const k of PLAN_FIELDS) data[k] = plan[k] ?? null;
   data.lines = (plan.lines || []).map((l) => ({ product_id: l.product_id || null, jan: l.jan || "", name: l.name || "",
-    quantity: Number(l.quantity) || 0 }));
+    character: l.character || "", quantity: Number(l.quantity) || 0 }));
   return data;
 }
 
@@ -179,6 +179,15 @@ export async function savePlan(plan) {
       updated_at: serverTimestamp() });
   });
   return id;
+}
+
+/** 取り込んだ納品予定をまとめて作成する。作成した ID の配列を返す。 */
+export async function createPlans(plans) {
+  const ids = plans.map(() => newId());
+  await runTransaction(db, async (tx) => {
+    plans.forEach((plan, i) => tx.set(planRef(ids[i]), { ...planData(plan), created_at: serverTimestamp(), updated_at: serverTimestamp() }));
+  });
+  return ids;
 }
 
 export async function deletePlan(id) {

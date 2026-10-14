@@ -299,7 +299,10 @@ describe("キャラクター名", () => {
     expect(parsed.rows).toHaveLength(1);
     expect([parsed.rows[0].character, parsed.rows[0].price]).toEqual(["タルト", 1650]);
     const sw = (await stockImportWorkbook(3)).getWorksheet("在庫取込");
-    expect(sw.getRow(1).values.slice(1, 7)).toEqual(["JANコード", "キャラクター名", "商品名", "数量", "拠点", "備考"]);
+    expect(sw.getRow(1).values.slice(1)).toEqual(["JANコード", "キャラクター名", "商品名", "数量", "拠点"]);
+    const { planImportWorkbook } = await import("../src/xlsxWrite.js");
+    const pw = (await planImportWorkbook(3)).getWorksheet("納品予定");
+    expect(pw.getRow(1).values.slice(1)).toEqual(["JANコード", "キャラクター名", "商品名", "数量", "拠点"]);
   });
 });
 
@@ -367,5 +370,37 @@ describe("納品予定", () => {
     const W3 = working(st);
     applyPlan(W3, { ...plan, source_id: "", lines: [{ jan: JAN_C, name: "新商品C", quantity: 5 }] }, "2026-10-22");
     expect(qty(commit(W3), JAN_C, "大阪委託店")).toBe(5);
+  });
+});
+
+
+describe("納品予定の Excel 取込", () => {
+  it("拠点ごとに納品予定を作り、読めない行はエラーとして返す", async () => {
+    const { plansFromRows, applyPlan } = await import("../src/domain/plans.js");
+    const st = seeded();
+    const data = await xlsx([
+      ["JANコード", "キャラクター名", "商品名", "数量", "拠点"],
+      [JAN_A, "パム", "商品A", 10, "大阪委託店"],
+      [JAN_B, "タルト", "新商品B", 5, "大阪委託店"],
+      [JAN_A, null, null, 3, "北京委託店"],
+      [JAN_A, null, null, 2, null],               // 拠点が空 → 画面で選んだ納品先
+      [JAN_C, null, null, 1, "大阪委託店"],         // 未登録の JAN で商品名なし
+      [JAN_A, null, null, 1, "存在しない店"],
+      [JAN_A, null, null, 0, "大阪委託店"],         // 数量0
+    ]);
+    const parsed = await parseStockFile("11月納品.xlsx", data);
+    const r = plansFromRows(st, parsed.rows, { due: "2026-11-01", filename: "11月納品.xlsx",
+      location_id: locationByName(st, "東京倉庫").id });
+    expect(r.lines).toBe(4);
+    expect(r.errors).toHaveLength(3);
+    expect(r.plans.map((p) => [p.title, p.lines.length])).toEqual([
+      ["11月納品（大阪委託店）", 2], ["11月納品（北京委託店）", 1], ["11月納品（東京倉庫）", 1]]);
+    expect(r.plans[0].lines[1]).toMatchObject({ product_id: null, jan: JAN_B, name: "新商品B", character: "タルト", quantity: 5 });
+    // 完了時: 新規商品はキャラクター名付きで登録、既存商品の空欄のキャラクター名を補う
+    const W = working(st);
+    applyPlan(W, r.plans[0], "2026-11-02");
+    expect(productByJan(W, JAN_B).character).toBe("タルト");
+    expect(productByJan(W, JAN_A).character).toBe("パム");
+    expect(qty(commit(W), JAN_B, "大阪委託店")).toBe(5);
   });
 });

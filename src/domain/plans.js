@@ -5,7 +5,7 @@
 //         done_date, applied: 在庫に反映したか, created_at, updated_at }
 
 import { tryNormalize } from "./jan.js";
-import { StockError, applyMovement, productByJan, productsByName, saveProduct, todayJst } from "./inventory.js";
+import { StockError, applyMovement, locationByName, productByJan, productsByName, saveProduct, todayJst } from "./inventory.js";
 
 export const PLAN_STATUS = { todo: "予定", doing: "準備中", done: "完了", cancelled: "取消" };
 export const OPEN_STATUSES = ["todo", "doing"];
@@ -92,7 +92,8 @@ export function applyPlan(W, plan, date) {
     if (q <= 0) return;
     let [product, code, err] = resolveLine(W, line);
     if (err) throw new StockError(`明細${i + 1}行目: ${err}`);
-    if (!product) product = saveProduct(W, { jan: code, name: line.name });
+    if (!product) product = saveProduct(W, { jan: code, name: line.name, character: line.character || "" });
+    else if (!product.character && line.character) saveProduct(W, { ...product, character: line.character });
     if (plan.source_id) {
       applyMovement(W, { productId: product.id, locationId: plan.source_id, kind: "TRANSFER_OUT", quantity: q, date, note });
     }
@@ -100,4 +101,48 @@ export function applyPlan(W, plan, date) {
     quantity += q;
   });
   return { quantity };
+}
+
+/**
+ * 取込ファイルの行から納品予定を作る。拠点ごとに1件。
+ * options: { due, source_id, title, location_id: 「拠点」列が空の行に使う納品先, filename }
+ * 戻り値: { plans, errors: ["N行目: ..."], lines: 取り込んだ行数 }
+ */
+export function plansFromRows(state, rows, { due, source_id = "", title = "", location_id = "", filename = "" } = {}) {
+  const groups = new Map();
+  const errors = [];
+  let lines = 0;
+  rows.forEach((row, i) => {
+    const no = `${i + 1}件目`;
+    const loc = row.location ? locationByName(state, row.location) : state.locations.get(location_id) || null;
+    if (!loc) {
+      errors.push(`${no}: ${row.location ? `拠点「${row.location}」が見つかりません` : "拠点が未指定です"}`);
+      return;
+    }
+    if (source_id && loc.id === source_id) {
+      errors.push(`${no}: 納品先が出荷元と同じです`);
+      return;
+    }
+    if (row.quantity === null || row.quantity === undefined || row.quantity <= 0) {
+      errors.push(`${no}: 数量が読み取れません`);
+      return;
+    }
+    const [product, code, err] = resolveLine(state, { jan: row.jan, name: row.name });
+    if (err) {
+      errors.push(`${no}: ${err}`);
+      return;
+    }
+    if (!groups.has(loc.id)) groups.set(loc.id, []);
+    groups.get(loc.id).push(product
+      ? { product_id: product.id, jan: product.jan || "", name: product.name, character: row.character || product.character || "",
+        quantity: row.quantity }
+      : { product_id: null, jan: code || "", name: row.name, character: row.character || "", quantity: row.quantity });
+    lines++;
+  });
+  const base = title || filename.replace(/\.[^.]+$/, "") || "納品予定";
+  const plans = [...groups].map(([lid, items]) => ({
+    ...emptyPlan(due), title: groups.size > 1 ? `${base}（${state.locations.get(lid).name}）` : base,
+    location_id: lid, source_id, due, lines: items,
+  }));
+  return { plans, errors, lines };
 }

@@ -145,14 +145,15 @@ function productGuide(ws) {
   });
 }
 
-export async function stockImportWorkbook(rows = 1000) {
+/** 在庫取込・納品予定の取込テンプレート（JANコード・キャラクター名・商品名・数量・拠点）。 */
+async function importTemplate(sheetName, rows) {
   const wb = await workbook();
-  const ws = wb.addWorksheet("在庫取込");
-  header(ws, [["JANコード", 18], ["キャラクター名", 18], ["商品名", 36], ["数量", 10], ["拠点", 20], ["備考", 40]],
-    [REQUIRED, HEADER, HEADER, REQUIRED, HEADER, HEADER]);
+  const ws = wb.addWorksheet(sheetName);
+  header(ws, [["JANコード", 18], ["キャラクター名", 18], ["商品名", 36], ["数量", 10], ["拠点", 22]],
+    [REQUIRED, HEADER, HEADER, REQUIRED, HEADER]);
   for (let r = 2; r <= rows + 1; r++) {
     const row = ws.getRow(r);
-    for (let c = 1; c <= 6; c++) {
+    for (let c = 1; c <= 5; c++) {
       row.getCell(c).font = { name: FONT, size: 11 };
       row.getCell(c).border = BORDER;
     }
@@ -161,6 +162,9 @@ export async function stockImportWorkbook(rows = 1000) {
   }
   return wb;
 }
+
+export const stockImportWorkbook = (rows = 1000) => importTemplate("在庫取込", rows);
+export const planImportWorkbook = (rows = 1000) => importTemplate("納品予定", rows);
 
 function headerRow(ws, titles) {
   ws.addRow(titles);
