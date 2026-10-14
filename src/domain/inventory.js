@@ -111,8 +111,17 @@ export function stockRows(state, { region, type, locationId, q, includeZero } = 
     || TORDER.indexOf(a.location.type) - TORDER.indexOf(b.location.type) || ja(a.location.name, b.location.name));
 }
 
-/** 商品ごとに [商品, 地域×種別の4区分..., 合計] を返す。 */
-export function productTotals(state, q = "", onlyInStock = false) {
+/** 登録されているキャラクター名（五十音順）。 */
+export function characterList(state) {
+  return [...new Set([...state.products.values()].map((p) => p.character || "").filter(Boolean))].sort(ja);
+}
+
+/**
+ * 商品ごとに [商品, 地域×種別の4区分..., 合計] を返す。
+ * characters: 絞り込むキャラクター名の配列（"" はキャラクター名なし）。空なら全件。
+ */
+export function productTotals(state, q = "", onlyInStock = false, characters = []) {
+  const chars = new Set(characters);
   const sums = new Map();
   for (const s of allStocks(state)) {
     const key = `${s.location.region}/${s.location.type}`;
@@ -122,7 +131,7 @@ export function productTotals(state, q = "", onlyInStock = false) {
   }
   const rows = [];
   for (const p of sortedProducts(state)) {
-    if (!matches(p, q)) continue;
+    if (!matches(p, q) || (chars.size && !chars.has(p.character || ""))) continue;
     const cats = CATEGORIES.map(([r, t]) => sums.get(p.id)?.[`${r}/${t}`] || 0);
     const total = cats.reduce((a, b) => a + b, 0);
     if (onlyInStock && total === 0) continue;

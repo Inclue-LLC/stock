@@ -284,6 +284,11 @@ describe("キャラクター名", () => {
     expect(order).toEqual([`タルト:${JAN_B}`, `タルト:${JAN_C}`, `パム:${JAN_A}`, "パム:なし", `ポポ:${JAN_D}`]);
     expect(productByJan(W, JAN_A).character).toBe("パム");
     expect(productTotals(commit(W), "タルト")).toHaveLength(2); // キャラクター名で検索できる
+    // キャラクター名で絞り込み（複数選択・"" はキャラクター名なし）
+    const pick = (chars) => productTotals(commit(W), "", false, chars).map(([p]) => p.character || "なし");
+    expect(new Set(pick(["タルト", "パム"]))).toEqual(new Set(["タルト", "パム"]));
+    expect(pick([""]).every((c) => c === "なし")).toBe(true);
+    expect(pick([])).toHaveLength(productTotals(commit(W)).length);
   });
 
   it("出力する Excel に品番・単位の列はない", async () => {

@@ -323,3 +323,12 @@ tbody tr.selected td { background: var(--err-soft); }
 .alert.info { background: var(--accent-soft); color: var(--text); }
 .alert.info .icon { color: var(--accent); }
 .lines input { width: 100%; }
+
+/* 在庫一覧のキャラクター絞り込み（複数選択） */
+.char-filter .label { font-size: 12px; font-weight: 700; color: var(--muted); margin-right: 4px; }
+.char-filter .grow { flex: 1 1 0; }
+.pick { display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface); color: var(--text); font-size: 13px; text-decoration: none; white-space: nowrap; }
+.pick:hover { border-color: var(--accent); text-decoration: none; }
+.pick.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.pick.on:not(:first-of-type)::before { content: "✓"; font-size: 11px; }

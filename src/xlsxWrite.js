@@ -186,7 +186,7 @@ export async function stockExportWorkbook(state, view, filters) {
     }
   } else {
     headerRow(ws, ["JANコード", "キャラクター名", "商品名", ...CATEGORIES.map(([r, t]) => `${REGIONS[r]}・${TYPES[t]}`), "合計"]);
-    for (const [p, ...qtys] of productTotals(state, filters.q, !filters.includeZero)) {
+    for (const [p, ...qtys] of productTotals(state, filters.q, !filters.includeZero, filters.characters)) {
       ws.addRow([p.jan, p.character, p.name, ...qtys]);
     }
   }
