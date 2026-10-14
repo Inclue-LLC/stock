@@ -78,7 +78,7 @@ export const delta = (v) =>
 export function pager(page, urlWith) {
   if (!page.total) return "";
   return html`<div class="pager">
-    <span class="muted">${n(page.total)}件中 ${n(page.start)}–${n(page.end)}件</span>
+    <span class="muted">${page.pages > 1 ? `${n(page.total)}件中 ${n(page.start)}–${n(page.end)}件` : `全 ${n(page.total)}件`}</span>
     ${page.pages > 1 ? html`<div class="pager-links">
       ${page.page > 1 ? html`<a href="${urlWith({ page: page.page - 1 })}">‹ 前へ</a>` : html`<span class="disabled">‹ 前へ</span>`}
       <span class="current">${page.page} / ${page.pages}</span>

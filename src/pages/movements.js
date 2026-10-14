@@ -16,7 +16,7 @@ export async function render(ctx) {
       && (!f.region || m.location.region === f.region) && (!f.type || m.location.type === f.type)
       && (!f.location_id || m.location.id === f.location_id) && (!f.source || m.source === f.source)
       && matches(m.product, f.q));
-  const page = paginate(rows, Number(ctx.q("page")) || 1, 100);
+  const page = paginate(rows, 1, Infinity); // 1ページに全件表示
   const opt = (obj, cur, blank) => html`<option value="">${blank}</option>${Object.entries(obj).map(([k, v]) =>
     html`<option value="${k}" ${cur === k ? "selected" : ""}>${v}</option>`)}`;
   return {

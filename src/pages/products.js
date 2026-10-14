@@ -14,7 +14,7 @@ const MAX_UPLOAD = 20 * 1024 * 1024;
 export function render(ctx) {
   const q = ctx.q("q");
   const items = sortedProducts(ctx.state).filter((p) => matches(p, q));
-  const page = paginate(items, Number(ctx.q("page")) || 1, 50);
+  const page = paginate(items, 1, Infinity); // 1ページに全件表示
   const brands = [...new Set([...ctx.state.products.values()].map((p) => p.brand).filter(Boolean))].sort();
   const characters = [...new Set([...ctx.state.products.values()].map((p) => p.character).filter(Boolean))].sort();
   return {

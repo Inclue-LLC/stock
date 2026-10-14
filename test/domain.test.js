@@ -227,6 +227,8 @@ describe("集計", () => {
     for (let i = 0; i < 120; i++) saveProduct(W, { jan: jan(`490100${String(i).padStart(6, "0")}`), name: `商品${i}` });
     const page = paginate(productTotals(commit(W)), 3, 50);
     expect([page.total, page.start, page.end, page.pages]).toEqual([121, 101, 121, 3]);
+    const all = paginate(productTotals(commit(W)), 1, Infinity);
+    expect([all.items.length, all.start, all.end, all.pages]).toEqual([121, 1, 121, 1]);
   });
 
   it("店舗別明細: 納品（日付別）・販売・調整・消化率・金額・ブランド", async () => {

@@ -156,9 +156,10 @@ export function paginate(items, page, perPage = 50) {
   const total = items.length;
   const pages = Math.max(1, Math.ceil(total / perPage));
   page = Math.max(1, Math.min(page || 1, pages));
+  const from = page === 1 ? 0 : (page - 1) * perPage; // perPage = Infinity（全件表示）でも NaN にしない
   return {
-    items: items.slice((page - 1) * perPage, page * perPage), page, pages, total,
-    start: total ? (page - 1) * perPage + 1 : 0, end: Math.min(total, page * perPage),
+    items: items.slice(from, from + perPage), page, pages, total,
+    start: total ? from + 1 : 0, end: Math.min(total, from + perPage),
   };
 }
 

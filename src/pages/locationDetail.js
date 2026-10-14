@@ -4,7 +4,7 @@ import { badge, dateTime, empty, html, icon, n, pager } from "../ui.js";
 import { download, storeExportWorkbook } from "../xlsxWrite.js";
 
 function filters(ctx) {
-  return { q: ctx.q("q").trim(), includeZero: ctx.q("include_zero") === "1" };
+  return { q: ctx.q("q").trim(), includeZero: ctx.q("hide_zero") !== "1" };
 }
 
 export function render(ctx) {
@@ -13,7 +13,7 @@ export function render(ctx) {
   const f = filters(ctx);
   const rows = locationStockRows(ctx.state, location.id, f);
   const total = rows.reduce((a, r) => a + r.q, 0);
-  const page = paginate(rows, Number(ctx.q("page")) || 1, 100);
+  const page = paginate(rows, 1, Infinity); // 1ページに全件表示
   return {
     title: location.name,
     sub: html`${badge(location)}　最終更新 ${location.updated_at ? dateTime(location.updated_at) : "なし"}`,
@@ -22,7 +22,7 @@ export function render(ctx) {
     body: html`<section class="card">
       <form class="toolbar" data-action="search" data-search>
         <label class="search grow">${icon("search")}<input type="search" name="q" value="${f.q}" placeholder="JANコード・品番・商品名・キャラクター名で検索"></label>
-        <label class="check"><input type="checkbox" name="include_zero" value="1" ${f.includeZero ? "checked" : ""}> 在庫0も表示</label>
+        <label class="check"><input type="checkbox" name="hide_zero" value="1" ${f.includeZero ? "" : "checked"}> 在庫0を隠す</label>
         <button class="ghost">絞り込み</button>
       </form>
       ${page.items.length ? html`<div class="table-wrap"><table>

@@ -9,7 +9,7 @@ function filters(ctx) {
     type: ctx.q("type") || null,
     locationId: ctx.q("location_id") || null,
     q: ctx.q("q").trim(),
-    includeZero: ctx.q("include_zero") === "1",
+    includeZero: ctx.q("hide_zero") !== "1",
   };
 }
 
@@ -17,7 +17,7 @@ export function render(ctx) {
   const f = filters(ctx);
   const view = ctx.q("view") === "location" ? "location" : "product"; // 拠点ごとの行表示は「拠点別」画面の明細から
   const items = view === "product" ? productTotals(ctx.state, f.q, !f.includeZero) : stockRows(ctx.state, f);
-  const page = paginate(items, Number(ctx.q("page")) || 1, 100);
+  const page = paginate(items, 1, Infinity); // 1ページに全件表示
   const locs = sortedLocations(ctx.state);
 
   const table = view === "product"
@@ -53,7 +53,7 @@ export function render(ctx) {
           <select name="type"><option value="">すべての種別</option>
             ${Object.entries(TYPES).map(([k, v]) => html`<option value="${k}" ${f.type === k ? "selected" : ""}>${v}</option>`)}</select>
           <select name="location_id">${locationOptions(locs, f.locationId, "すべての拠点")}</select>` : ""}
-        <label class="check"><input type="checkbox" name="include_zero" value="1" ${f.includeZero ? "checked" : ""}> 在庫0も表示</label>
+        <label class="check"><input type="checkbox" name="hide_zero" value="1" ${f.includeZero ? "" : "checked"}> 在庫0を隠す</label>
         <button class="ghost">絞り込み</button>
       </form>
       ${page.items.length ? html`<div class="table-wrap">${table}</div>${pager(page, ctx.urlWith)}` : empty("該当する在庫はありません。")}
