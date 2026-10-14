@@ -286,6 +286,19 @@ describe("キャラクター名", () => {
     expect(productTotals(commit(W), "タルト")).toHaveLength(2); // キャラクター名で検索できる
   });
 
+  it("出力する Excel に品番・単位の列はない", async () => {
+    const { stockExportWorkbook, backupWorkbook } = await import("../src/xlsxWrite.js");
+    const st = seeded();
+    const head = (wb, name) => wb.getWorksheet(name).getRow(1).values.slice(1);
+    for (const wb of [await stockExportWorkbook(st, "product", {}), await stockExportWorkbook(st, "location", {})]) {
+      const h = head(wb, "在庫");
+      expect(h.slice(0, 3)).toEqual(["JANコード", "キャラクター名", "商品名"]);
+      expect(h).not.toContain("品番");
+      expect(h).not.toContain("単位");
+    }
+    expect(head(await backupWorkbook(st), "商品マスタ")).toEqual(["JANコード", "商品名", "キャラクター名", "ブランド", "上代（税込）", "備考"]);
+  });
+
   it("商品マスタのテンプレートにキャラクター名の列があり、そのまま取り込める", async () => {
     const { productMasterWorkbook, stockImportWorkbook } = await import("../src/xlsxWrite.js");
     const wb = await productMasterWorkbook(5);

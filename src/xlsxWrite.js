@@ -179,20 +179,21 @@ export async function stockExportWorkbook(state, view, filters) {
   const wb = await workbook();
   const ws = wb.addWorksheet("在庫");
   if (view === "location") {
-    headerRow(ws, ["JANコード", "品番", "キャラクター名", "商品名", "地域", "種別", "拠点", "数量", "単位"]);
+    headerRow(ws, ["JANコード", "キャラクター名", "商品名", "地域", "種別", "拠点", "数量"]);
     for (const s of stockRows(state, filters)) {
-      ws.addRow([s.product.jan, s.product.sku, s.product.character, s.product.name, REGIONS[s.location.region], TYPES[s.location.type],
-        s.location.name, s.q, s.product.unit]);
+      ws.addRow([s.product.jan, s.product.character, s.product.name, REGIONS[s.location.region], TYPES[s.location.type],
+        s.location.name, s.q]);
     }
   } else {
-    headerRow(ws, ["JANコード", "品番", "キャラクター名", "商品名", ...CATEGORIES.map(([r, t]) => `${REGIONS[r]}・${TYPES[t]}`), "合計", "単位"]);
+    headerRow(ws, ["JANコード", "キャラクター名", "商品名", ...CATEGORIES.map(([r, t]) => `${REGIONS[r]}・${TYPES[t]}`), "合計"]);
     for (const [p, ...qtys] of productTotals(state, filters.q, !filters.includeZero)) {
-      ws.addRow([p.jan, p.sku, p.character, p.name, ...qtys, p.unit]);
+      ws.addRow([p.jan, p.character, p.name, ...qtys]);
     }
   }
   ws.getColumn(1).numFmt = "@";
   ws.getColumn(1).width = 16;
-  ws.getColumn(4).width = 36;
+  ws.getColumn(2).width = 18;
+  ws.getColumn(3).width = 36;
   return wb;
 }
 
@@ -213,8 +214,8 @@ export async function storeExportWorkbook(state, location, filters) {
 export async function backupWorkbook(state) {
   const wb = await workbook();
   const p = wb.addWorksheet("商品マスタ");
-  headerRow(p, ["JANコード", "商品名", "キャラクター名", "ブランド", "上代（税込）", "品番", "単位", "備考"]);
-  for (const x of sortedProducts(state)) p.addRow([x.jan, x.name, x.character, x.brand, x.price, x.sku, x.unit, x.note]);
+  headerRow(p, ["JANコード", "商品名", "キャラクター名", "ブランド", "上代（税込）", "備考"]);
+  for (const x of sortedProducts(state)) p.addRow([x.jan, x.name, x.character, x.brand, x.price, x.note]);
   p.getColumn(1).numFmt = "@";
   const l = wb.addWorksheet("拠点");
   headerRow(l, ["拠点", "地域", "種別", "備考"]);
