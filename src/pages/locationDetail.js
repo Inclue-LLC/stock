@@ -1,5 +1,6 @@
 import { go, searchHash } from "../app.js";
 import { locationStockRows, paginate } from "../domain/inventory.js";
+import { openPlansFor } from "../domain/plans.js";
 import { badge, bulkBar, dateTime, empty, html, icon, n, pager, selectCell, selectHeader, stockLegend, stockQty, wireBulk } from "../ui.js";
 import { bulkDelete } from "./bulkDelete.js";
 import { download, storeExportWorkbook } from "../xlsxWrite.js";
@@ -15,12 +16,15 @@ export function render(ctx) {
   const rows = locationStockRows(ctx.state, location.id, f);
   const total = rows.reduce((a, r) => a + r.q, 0);
   const page = paginate(rows, 1, Infinity); // 1ページに全件表示
+  const plans = openPlansFor(ctx.state, location.id);
   return {
     title: location.name,
     sub: html`${badge(location)}　最終更新 ${location.updated_at ? dateTime(location.updated_at) : "なし"}`,
     actions: html`<button class="ghost" data-click="export">${icon("download")}Excel出力</button>
       <a class="btn" href="#/imports?location_id=${location.id}">${icon("upload")}在庫を更新</a>`,
-    body: html`<section class="card">
+    body: html`${plans.length ? html`<div class="alert info">${icon("calendar")}<span>この拠点への納品予定が ${plans.length}件あります（${plans.slice(0, 3).map((p) => `${p.due.slice(5).replace("-", "/")} ${p.title || ""}`).join("、")}${plans.length > 3 ? " ほか" : ""}）。
+        <a href="#/plans?location_id=${location.id}">納品予定を見る</a></span></div>` : ""}
+    <section class="card">
       <form class="toolbar" data-action="search" data-search>
         <label class="search grow">${icon("search")}<input type="search" name="q" value="${f.q}" placeholder="JANコード・品番・商品名・キャラクター名で検索"></label>
         <label class="check"><input type="checkbox" name="hide_zero" value="1" ${f.includeZero ? "" : "checked"}> 在庫0を隠す</label>

@@ -333,3 +333,39 @@ describe("商品の削除", () => {
     expect(qty(st, JAN_A, "東京倉庫")).toBeNull();
   });
 });
+
+describe("納品予定", () => {
+  it("予定日の表示（過ぎた・今日・7日以内）", async () => {
+    const { dueClass, dueLabel } = await import("../src/domain/plans.js");
+    const t = "2026-10-14";
+    expect(dueClass({ status: "todo", due: "2026-10-10" }, t)).toBe("overdue");
+    expect(dueClass({ status: "doing", due: "2026-10-14" }, t)).toBe("today");
+    expect(dueClass({ status: "todo", due: "2026-10-20" }, t)).toBe("soon");
+    expect(dueClass({ status: "todo", due: "2026-11-30" }, t)).toBe("");
+    expect(dueClass({ status: "done", due: "2026-10-10" }, t)).toBe("");
+    expect(dueLabel({ status: "todo", due: "2026-10-10" }, t)).toBe("10/10（4日過ぎ）");
+  });
+
+  it("明細の入力（JAN・商品名）と、完了時の在庫反映（出荷元から減算・納品先に加算）", async () => {
+    const { applyPlan, lineFromText } = await import("../src/domain/plans.js");
+    let st = move(seeded(), "IN", 10, "東京倉庫");
+    expect(lineFromText(st, `${JAN_A} 商品A`, 3).product_id).toBe(productByJan(st, JAN_A).id);
+    expect(lineFromText(st, "商品A", 3).product_id).toBe(productByJan(st, JAN_A).id);
+    expect(lineFromText(st, `${JAN_B} 新商品B`, 2)).toMatchObject({ product_id: null, jan: JAN_B, name: "新商品B" });
+    const plan = { title: "追加納品", location_id: locationByName(st, "大阪委託店").id, source_id: locationByName(st, "東京倉庫").id,
+      lines: [lineFromText(st, JAN_A, 4), lineFromText(st, `${JAN_B} 新商品B`, 0), { jan: "", name: "", quantity: 0 }] };
+    const W = working(st);
+    expect(applyPlan(W, plan, "2026-10-20")).toEqual({ quantity: 4 });
+    st = commit(W);
+    expect(qty(st, JAN_A, "東京倉庫")).toBe(6);
+    expect(qty(st, JAN_A, "大阪委託店")).toBe(4);
+    expect(st.stocks.get(locationByName(st, "大阪委託店").id).get(productByJan(st, JAN_A).id).dels).toEqual({ "2026-10-20": 4 });
+    // 出荷元の在庫が足りなければエラー
+    const W2 = working(st);
+    expect(() => applyPlan(W2, { ...plan, lines: [lineFromText(st, JAN_A, 99)] }, "2026-10-21")).toThrow("在庫が不足");
+    // 未登録の JAN は商品名があれば新規登録
+    const W3 = working(st);
+    applyPlan(W3, { ...plan, source_id: "", lines: [{ jan: JAN_C, name: "新商品C", quantity: 5 }] }, "2026-10-22");
+    expect(qty(commit(W3), JAN_C, "大阪委託店")).toBe(5);
+  });
+});

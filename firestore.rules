@@ -36,6 +36,16 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // 納品予定（タスク）。決まった項目だけ。削除は可能
+    match /plans/{id} {
+      allow read: if true;
+      allow create, update: if request.resource.data.keys().hasOnly(['title', 'location_id', 'source_id', 'due', 'status',
+          'memo', 'lines', 'done_date', 'applied', 'created_at', 'updated_at'])
+        && request.resource.data.status in ['todo', 'doing', 'done', 'cancelled']
+        && request.resource.data.lines is list && request.resource.data.lines.size() <= 2000;
+      allow delete: if true;
+    }
+
     // 入出庫履歴は追記のみ（書き換え・削除はできない）
     match /history/{id} {
       allow read: if true;

@@ -10,6 +10,8 @@ import * as productDetail from "./pages/productDetail.js";
 import * as movements from "./pages/movements.js";
 import * as imports from "./pages/imports.js";
 import * as importPreview from "./pages/importPreview.js";
+import * as plans from "./pages/plans.js";
+import * as planEdit from "./pages/planEdit.js";
 import * as ozImport from "./pages/ozImport.js";
 
 const ROUTES = [
@@ -22,12 +24,15 @@ const ROUTES = [
   [/^\/imports\/oz$/, ozImport],
   [/^\/imports\/([\w-]+)$/, importPreview],
   [/^\/imports$/, imports],
+  [/^\/plans$/, plans],
+  [/^\/plans\/([\w-]+)$/, planEdit],
 ];
 
 // [リンク先, アイコン, 名前, この項目を選択中として表示する画面]
 const NAV = [
   ["#/stocks", "boxes", "在庫一覧", ["/stocks", "/products"]],
   ["#/locations", "store", "拠点別", ["/locations"]],
+  ["#/plans", "calendar", "納品予定", ["/plans"]],
   ["#/imports", "upload", "在庫の更新", ["/imports", "/movements"]],
   ["#/location-master", "pin", "拠点マスタ", ["/location-master"]],
 ];
@@ -135,7 +140,8 @@ export async function render() {
 /** データが変わったときの描き直し。入力中のフォームがある画面や、履歴を読む画面はそのままにする。 */
 export function onDataChange() {
   if (!current) return render();
-  if (formDirty || current.mod.live === false) return;
+  const live = typeof current.mod.live === "function" ? current.mod.live() : current.mod.live;
+  if (formDirty || live === false) return;
   render();
 }
 

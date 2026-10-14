@@ -301,3 +301,31 @@ td.sel input, th.sel input, .bulkbar input { width: 16px; height: 16px; }
 tbody tr.selected td { background: var(--err-soft); }
 .bulkbar { position: sticky; top: 0; z-index: 5; box-shadow: 0 1px 0 var(--border); }
 @media (max-width: 860px) { .bulkbar { top: 50px; } }
+
+/* 納品予定（ボード） */
+.board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: start; }
+@media (max-width: 1000px) { .board { grid-template-columns: 1fr; } }
+.board-col { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; min-height: 120px; }
+.board-col h2 { font-size: 14px; margin: 2px 4px 12px; display: flex; gap: 8px; align-items: center; }
+.board-col.col-todo h2::before, .board-col.col-doing h2::before, .board-col.col-done h2::before { content: ""; width: 8px; height: 8px; border-radius: 50%; }
+.board-col.col-todo h2::before { background: var(--muted); }
+.board-col.col-doing h2::before { background: var(--accent); }
+.board-col.col-done h2::before { background: var(--ok); }
+.board-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 24px 0; }
+.plan-card { background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--border-strong); border-radius: 10px;
+  padding: 12px 14px; margin-bottom: 10px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 4px; }
+.plan-card.due-overdue { border-left-color: var(--err); }
+.plan-card.due-today, .plan-card.due-soon { border-left-color: var(--warn); }
+.plan-card.due-overdue .due { color: var(--err); font-weight: 700; }
+.plan-card.due-today .due, .plan-card.due-soon .due { color: var(--warn); font-weight: 700; }
+.plan-title { font-weight: 700; color: var(--text); }
+.plan-meta { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-2); }
+.plan-meta .icon { width: 14px; height: 14px; color: var(--muted); }
+.plan-actions { margin-top: 6px; display: flex; justify-content: flex-end; }
+.legend .dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
+.dot.overdue { background: var(--err); }
+.dot.soon { background: var(--warn); }
+.card.highlight { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.alert.info { background: var(--accent-soft); color: var(--text); }
+.alert.info .icon { color: var(--accent); }
+.lines input { width: 100%; }

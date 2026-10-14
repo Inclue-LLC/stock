@@ -22,6 +22,7 @@ import {
   where,
 } from "firebase/firestore";
 import { StockError, applyBatch, emptyState, newId, working } from "./domain/inventory.js";
+import { applyPlan } from "./domain/plans.js";
 
 const HISTORY_CHUNK = 400; // 1件の履歴ドキュメントに入れる最大件数（1MB 制限対策）
 const MAX_ROWS_JSON = 900_000;
@@ -29,7 +30,7 @@ const MAX_ROWS_JSON = 900_000;
 let db = null;
 let state = emptyState();
 let catalogVersion = 0;
-let ready = { catalog: false, stocks: false };
+let ready = { catalog: false, stocks: false, plans: false };
 
 export function init(firestore) {
   db = firestore;
@@ -58,9 +59,11 @@ function stockItems(data) {
 export function subscribe(onChange, onError) {
   let catalogData = null;
   const stocks = new Map();
+  const plans = new Map();
   const emit = () => {
-    if (ready.catalog && ready.stocks) {
+    if (ready.catalog && ready.stocks && ready.plans) {
       state = catalogToState(catalogData, new Map(stocks));
+      state.plans = new Map(plans);
       onChange(state);
     }
   };
@@ -78,10 +81,19 @@ export function subscribe(onChange, onError) {
     ready.stocks = true;
     emit();
   }, onError);
+  const u3 = onSnapshot(collection(db, "plans"), (snap) => {
+    for (const change of snap.docChanges()) {
+      if (change.type === "removed") plans.delete(change.doc.id);
+      else plans.set(change.doc.id, planFromData(change.doc.id, change.doc.data()));
+    }
+    ready.plans = true;
+    emit();
+  }, onError);
   return () => {
     u1();
     u2();
-    ready = { catalog: false, stocks: false };
+    u3();
+    ready = { catalog: false, stocks: false, plans: false };
   };
 }
 
@@ -138,6 +150,53 @@ export async function mutate(fn, { reads = [] } = {}) {
     }
     return out.result;
   });
+}
+
+// ---- 納品予定（plans） ----------------------------------------------------------------
+
+const PLAN_FIELDS = ["title", "location_id", "source_id", "due", "status", "memo", "lines", "done_date", "applied"];
+export const planRef = (id) => doc(db, "plans", id);
+
+function planFromData(id, d) {
+  return { id, title: "", location_id: "", source_id: "", due: "", status: "todo", memo: "", lines: [], done_date: null,
+    applied: false, ...d, created_at: d.created_at?.toDate?.() || null, updated_at: d.updated_at?.toDate?.() || null };
+}
+
+function planData(plan) {
+  const data = {};
+  for (const k of PLAN_FIELDS) data[k] = plan[k] ?? null;
+  data.lines = (plan.lines || []).map((l) => ({ product_id: l.product_id || null, jan: l.jan || "", name: l.name || "",
+    quantity: Number(l.quantity) || 0 }));
+  return data;
+}
+
+/** 納品予定を保存する（新規なら ID を返す）。 */
+export async function savePlan(plan) {
+  const id = plan.id || newId();
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(planRef(id));
+    tx.set(planRef(id), { ...planData(plan), created_at: snap.exists() ? snap.data().created_at : serverTimestamp(),
+      updated_at: serverTimestamp() });
+  });
+  return id;
+}
+
+export async function deletePlan(id) {
+  await runTransaction(db, async (tx) => tx.delete(planRef(id)));
+}
+
+/** 納品予定を完了にする。apply なら在庫に反映する（1回だけ）。 */
+export async function completePlan(id, date, apply) {
+  return mutate((W, [snap]) => {
+    if (!snap.exists()) throw new StockError("納品予定が見つかりません");
+    const plan = planFromData(id, snap.data());
+    if (plan.applied && apply) throw new StockError("この納品予定はすでに在庫に反映済みです");
+    const result = apply ? applyPlan(W, plan, date) : { quantity: 0 };
+    const data = { ...planData({ ...plan, status: "done", done_date: date, applied: plan.applied || apply }),
+      created_at: snap.data().created_at, updated_at: serverTimestamp() };
+    return { result, writes: [[planRef(id), data]],
+      history: { filename: `納品予定: ${plan.title || plan.due}`, source: "MANUAL" } };
+  }, { reads: [planRef(id)] });
 }
 
 // ---- 取込（imports） ---------------------------------------------------------------
