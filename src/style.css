@@ -15,7 +15,7 @@
   --ok: #15803d; --ok-soft: #e9f7ee;
   --err: #c2362b; --err-soft: #fdeeed;
   --warn: #9a6100; --warn-soft: #fff5e1;
-  --low: #c98200; /* 在庫が少ない数字の文字色 */
+  --low: #ea580c; /* 在庫が少ない数字の文字色（オレンジ） */
   --jp: #d1453b; --jp-soft: #fdecea;
   --cn: #c27a00; --cn-soft: #fff3dd;
   --wh: #0e7c86; --wh-soft: #e3f5f6;
