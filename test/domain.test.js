@@ -341,6 +341,15 @@ describe("キャラクター名", () => {
     expect([p.name, ...q]).toEqual(["商品A", 5, 0, 0, 2, 7]);
   });
 
+  it("納品予定の状態は予定・完了の2つ。名前は納品先の拠点名", async () => {
+    const { planStatus, planTitle, PLAN_STATUS } = await import("../src/domain/plans.js");
+    expect(Object.values(PLAN_STATUS)).toEqual(["予定", "完了"]);
+    expect(["todo", "doing", "cancelled", "done"].map(planStatus)).toEqual(["todo", "todo", "todo", "done"]);
+    const st = seeded();
+    expect(planTitle(st, { location_id: locationByName(st, "大阪委託店").id, title: "古いタイトル" })).toBe("大阪委託店");
+    expect(planTitle(st, { location_id: "gone", title: "削除された店" })).toBe("削除された店");
+  });
+
   it("出力する Excel に品番・単位の列はない", async () => {
     const { stockExportWorkbook, backupWorkbook } = await import("../src/xlsxWrite.js");
     const st = seeded();
@@ -451,7 +460,7 @@ describe("納品予定の Excel 取込", () => {
     expect(r.lines).toBe(4);
     expect(r.errors).toHaveLength(3);
     expect(r.plans.map((p) => [p.title, p.lines.length])).toEqual([
-      ["大阪委託店追加納品", 2], ["北京委託店追加納品", 1], ["東京倉庫追加納品", 1]]);
+      ["大阪委託店", 2], ["北京委託店", 1], ["東京倉庫", 1]]);
     expect(r.plans[0].lines[1]).toMatchObject({ product_id: null, jan: JAN_B, name: "新商品B", character: "タルト", quantity: 5 });
     // 完了時: 新規商品はキャラクター名付きで登録、既存商品の空欄のキャラクター名を補う
     const W = working(st);

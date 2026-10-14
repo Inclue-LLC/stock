@@ -1,7 +1,7 @@
 import { go } from "../app.js";
 import { completePlan, deletePlan, savePlan } from "../db.js";
 import { StockError, sortedLocations, todayJst } from "../domain/inventory.js";
-import { PLAN_STATUS, planQuantity, resolveLine } from "../domain/plans.js";
+import { PLAN_STATUS, planQuantity, planTitle, resolveLine } from "../domain/plans.js";
 import { empty, html, icon, locationOptions, n } from "../ui.js";
 
 // 入力中に他の人の更新で消えないよう、自動では描き直さない。
@@ -14,11 +14,11 @@ export function render(ctx) {
   waitingForData = !plan;
   if (!plan) return { title: "納品予定が見つかりません", body: empty("削除されたか、URL が正しくありません。", "#/plans", "納品予定の一覧へ") };
   const locs = sortedLocations(ctx.state);
-  const showComplete = plan.status !== "done" && plan.status !== "cancelled";
+  const showComplete = plan.status !== "done";
   const src = plan.source_id ? ctx.state.locations.get(plan.source_id) : null;
   const dest = ctx.state.locations.get(plan.location_id);
   return {
-    title: plan.title || "納品予定",
+    title: planTitle(ctx.state, plan),
     sub: html`<span class="chip k">${PLAN_STATUS[plan.status]}</span>${plan.applied ? html`　<span class="chip s-applied">在庫反映済</span>` : ""}`,
     actions: html`<a class="btn ghost" href="#/plans">納品予定の一覧へ</a>`,
     body: html`
@@ -50,7 +50,6 @@ export function render(ctx) {
     <section class="card">
       <div class="card-head"><h2>予定の内容</h2></div>
       <form data-action="save" class="card-body form" id="plan-form">
-        <label class="field"><span>タイトル</span><input name="title" value="${plan.title}" required></label>
         <div class="row">
           <label class="field"><span>納品先</span><select name="location_id" required>${locationOptions(locs, plan.location_id || null, "選択してください")}</select></label>
           <label class="field"><span>出荷元（任意。完了時にここから在庫を減らします）</span><select name="source_id">${locationOptions(locs, plan.source_id || null, "なし（新規入荷など）")}</select></label>
@@ -76,7 +75,7 @@ function readForm(form) {
   const s = (k) => String(f.get(k) || "").trim();
   if (!s("location_id")) throw new StockError("納品先を選択してください");
   if (s("source_id") && s("source_id") === s("location_id")) throw new StockError("出荷元と納品先が同じです");
-  return { title: s("title"), location_id: s("location_id"), source_id: s("source_id"), status: s("status") || "todo",
+  return { location_id: s("location_id"), source_id: s("source_id"), status: s("status") || "todo",
     memo: String(f.get("memo") || "") };
 }
 
@@ -84,7 +83,8 @@ export const actions = {
   async save(ctx, form) {
     const base = ctx.state.plans.get(ctx.args[0]);
     if (!base) throw new StockError("納品予定が見つかりません");
-    const id = await savePlan({ ...base, ...readForm(form) });
+    const data = readForm(form);
+    const id = await savePlan({ ...base, ...data, title: ctx.state.locations.get(data.location_id)?.name || base.title });
     go(`#/plans/${id}`, { msg: "保存しました" });
   },
   async complete(ctx, form) {

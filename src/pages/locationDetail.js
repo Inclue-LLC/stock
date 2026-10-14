@@ -23,7 +23,7 @@ export function render(ctx) {
     sub: html`${badge(location)}　最終更新 ${location.updated_at ? dateTime(location.updated_at) : "なし"}`,
     actions: html`<button class="ghost" data-click="export">${icon("download")}Excel出力</button>
       <a class="btn" href="#/imports?location_id=${location.id}">${icon("upload")}在庫を更新</a>`,
-    body: html`${plans.length ? html`<div class="alert info">${icon("calendar")}<span>この拠点への納品予定が ${plans.length}件あります（${plans.slice(0, 3).map((p) => p.title).join("、")}${plans.length > 3 ? " ほか" : ""}）。
+    body: html`${plans.length ? html`<div class="alert info">${icon("calendar")}<span>この拠点への納品予定が ${plans.length}件あります。
         <a href="#/plans?location_id=${location.id}">納品予定を見る</a></span></div>` : ""}
     <section class="card">
       <form class="toolbar" data-action="search" data-search>

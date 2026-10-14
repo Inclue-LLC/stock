@@ -114,14 +114,13 @@ run("Firestore（エミュレータ）", () => {
     expect(s.stocks.get(locationByName(s, "大阪委託店").id).size).toBe(0);
   });
 
-  it("納品予定: 登録 → 状態変更 → 完了で在庫に反映（2回目は反映しない）→ 削除", async () => {
+  it("納品予定: 登録 → 完了で在庫に反映（2回目は反映しない）→ 削除", async () => {
     const { lineFromText } = await import("../src/domain/plans.js");
     const dest = locationByName(state, "大阪委託店").id;
     const id = await db.savePlan({ title: "11月納品", location_id: dest, source_id: "", due: "2026-11-01", status: "todo",
       memo: "", lines: [lineFromText(state, JAN_A, 7)], done_date: null, applied: false });
     let s = await waitFor((x) => x.plans.get(id));
-    await db.savePlan({ ...s.plans.get(id), status: "doing" });
-    s = await waitFor((x) => x.plans.get(id)?.status === "doing");
+    expect(s.plans.get(id).status).toBe("todo");
     expect(await db.completePlan(id, "2026-11-02", true)).toEqual({ quantity: 7 });
     s = await waitFor((x) => x.plans.get(id)?.status === "done");
     expect(s.plans.get(id)).toMatchObject({ applied: true, done_date: "2026-11-02" });

@@ -1,12 +1,12 @@
 import { go } from "../app.js";
-import { createPlans, savePlan } from "../db.js";
+import { createPlans } from "../db.js";
 import { parseStockFile } from "../domain/files.js";
 import { StockError, sortedLocations } from "../domain/inventory.js";
-import { PLAN_STATUS, planQuantity, plansFromRows, renameLines, sortPlans } from "../domain/plans.js";
+import { planQuantity, planTitle, plansFromRows, renameLines, sortPlans } from "../domain/plans.js";
 import { dropzone, empty, html, icon, locationOptions, n } from "../ui.js";
 import { download, planImportWorkbook } from "../xlsxWrite.js";
 
-const COLUMNS = [["todo", "予定"], ["doing", "準備中"], ["done", "完了"]];
+const COLUMNS = [["todo", "予定"], ["done", "完了"]];
 const DONE_LIMIT = 30; // 完了の列は新しい順にこの件数まで
 
 // 登録済みと商品名が違う行があったときの、作成前の確認待ちの取込（{ plans, errors, lines, diffs, filename }）
@@ -37,13 +37,11 @@ function confirmCard(p) {
 }
 
 function card(ctx, p) {
-  const dest = ctx.state.locations.get(p.location_id);
   const src = p.source_id ? ctx.state.locations.get(p.source_id) : null;
-  const next = p.status === "todo" ? html`<button type="button" class="ghost sm" data-click="setStatus" data-id="${p.id}" data-status="doing">準備中にする ›</button>`
-    : p.status === "doing" ? html`<a class="btn sm" href="#/plans/${p.id}?complete=1">完了にする ›</a>` : "";
+  const next = p.status === "todo" ? html`<a class="btn sm" href="#/plans/${p.id}?complete=1">完了にする ›</a>` : "";
   return html`<div class="plan-card">
-    <a class="plan-title" href="#/plans/${p.id}">${p.title || "（タイトルなし）"}</a>
-    <div class="plan-meta">${icon("pin")}<span>${dest ? dest.name : "納品先未設定"}${src ? html` <span class="muted">← ${src.name}</span>` : ""}</span></div>
+    <a class="plan-title" href="#/plans/${p.id}">${planTitle(ctx.state, p)}</a>
+    ${src ? html`<div class="plan-meta muted">出荷元: ${src.name}</div>` : ""}
     ${p.status === "done" && p.done_date ? html`<div class="plan-meta"><span class="due">完了 ${p.done_date.slice(5).replace("-", "/")}</span></div>` : ""}
     <div class="plan-meta muted">明細 ${p.lines.length}件・${n(planQuantity(p))}点${p.applied ? html`　<span class="chip s-applied">在庫反映済</span>` : ""}</div>
     ${next ? html`<div class="plan-actions">${next}</div>` : ""}
@@ -63,7 +61,7 @@ export function render(ctx) {
   const locs = sortedLocations(ctx.state);
   return {
     title: "納品予定",
-    sub: "これから納品する予定を、予定 → 準備中 → 完了 の順に管理します。完了時に在庫へ反映できます",
+    sub: "これから納品する予定を「予定」→「完了」で管理します。完了時に在庫へ反映できます",
     body: html`
     ${pending ? confirmCard(pending) : html`<section class="card">
       <div class="card-head"><h2>Excel から納品予定を作成</h2><a href="#" data-click="template">${icon("download")} テンプレート</a></div>
@@ -77,7 +75,7 @@ export function render(ctx) {
               <select name="source_id">${locationOptions(locs, null, "なし（新規入荷など）")}</select></label>
           </div>
         </div>
-        <p class="hint" style="margin:0">拠点ごとに1件の納品予定になります（タイトルは「拠点名＋追加納品」）。</p>
+        <p class="hint" style="margin:0">拠点（納品先）ごとに1件の納品予定になります。</p>
         <div><button>${icon("upload")}読み込んで納品予定を作成</button></div>
       </form>
     </section>`}
@@ -148,11 +146,5 @@ export const actions = {
   filter(ctx, form) {
     const id = new FormData(form).get("location_id");
     go(id ? `#/plans?location_id=${id}` : "#/plans");
-  },
-  async setStatus(ctx, el) {
-    const plan = ctx.state.plans.get(el.dataset.id);
-    if (!plan) return;
-    await savePlan({ ...plan, status: el.dataset.status });
-    go(ctx.urlWith(), { msg: `「${plan.title || "納品予定"}」を${PLAN_STATUS[el.dataset.status]}にしました` });
   },
 };

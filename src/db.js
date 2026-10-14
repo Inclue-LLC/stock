@@ -22,7 +22,7 @@ import {
   where,
 } from "firebase/firestore";
 import { StockError, applyBatch, emptyState, newId, saveProduct, setQuantities, working } from "./domain/inventory.js";
-import { applyPlan } from "./domain/plans.js";
+import { applyPlan, planStatus } from "./domain/plans.js";
 
 const HISTORY_CHUNK = 400; // 1件の履歴ドキュメントに入れる最大件数（1MB 制限対策）
 const MAX_ROWS_JSON = 900_000;
@@ -164,7 +164,7 @@ export const planRef = (id) => doc(db, "plans", id);
 
 function planFromData(id, d) {
   return { id, title: "", location_id: "", source_id: "", due: "", status: "todo", memo: "", lines: [], done_date: null,
-    applied: false, ...d, created_at: d.created_at?.toDate?.() || null, updated_at: d.updated_at?.toDate?.() || null };
+    applied: false, ...d, status: planStatus(d.status), created_at: d.created_at?.toDate?.() || null, updated_at: d.updated_at?.toDate?.() || null };
 }
 
 function planData(plan) {

@@ -1,14 +1,20 @@
 // 納品予定（タスク管理）。
 //
-// plan: { id, title, location_id: 納品先, source_id: 出荷元（任意）, title: 「拠点名＋追加納品」,
-//         status: todo/doing/done/cancelled, memo, lines: [{ product_id, jan, name, quantity }],
+// plan: { id, title: 納品先の拠点名, location_id: 納品先, source_id: 出荷元（任意）,
+//         status: todo（予定）/done（完了）, memo, lines: [{ product_id, jan, name, quantity }],
 //         done_date, applied: 在庫に反映したか, created_at, updated_at }
 
 import { tryNormalize } from "./jan.js";
 import { StockError, applyMovement, locationByName, nameKey, productByJan, productsByName, saveProduct } from "./inventory.js";
 
-export const PLAN_STATUS = { todo: "予定", doing: "準備中", done: "完了", cancelled: "取消" };
-export const OPEN_STATUSES = ["todo", "doing"];
+export const PLAN_STATUS = { todo: "予定", done: "完了" };
+export const OPEN_STATUSES = ["todo"];
+
+/** 状態は「予定」「完了」の2つ（以前の「準備中」「取消」は「予定」として扱う）。 */
+export const planStatus = (status) => (status === "done" ? "done" : "todo");
+
+/** 納品予定の名前 = 納品先の拠点名（拠点が削除されていれば保存時の名前）。 */
+export const planTitle = (state, plan) => state.locations.get(plan.location_id)?.name || plan.title || "納品先未設定";
 
 export function emptyPlan() {
   return { id: null, title: "", location_id: "", source_id: "", due: "", status: "todo", memo: "", lines: [],
@@ -83,7 +89,7 @@ export function applyPlan(W, plan, date) {
 
 /**
  * 取込ファイルの行から納品予定を作る。拠点ごとに1件。
- * タイトルは「拠点名＋追加納品」。options: { source_id, location_id: 「拠点」列が空の行に使う納品先 }
+ * タイトルは納品先の拠点名。options: { source_id, location_id: 「拠点」列が空の行に使う納品先 }
  * 戻り値: { plans, errors: ["N行目: ..."], lines: 取り込んだ行数,
  *          diffs: 登録済みと商品名が違う商品 [{ product, names: [ファイルの商品名...] }] }
  */
@@ -125,7 +131,7 @@ export function plansFromRows(state, rows, { source_id = "", location_id = "" } 
     lines++;
   });
   const plans = [...groups].map(([lid, items]) => ({
-    ...emptyPlan(), title: `${state.locations.get(lid).name}追加納品`, location_id: lid, source_id, lines: items,
+    ...emptyPlan(), title: state.locations.get(lid).name, location_id: lid, source_id, lines: items,
   }));
   return { plans, errors, lines, diffs: [...diffs.values()] };
 }

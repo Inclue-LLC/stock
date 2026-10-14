@@ -305,13 +305,12 @@ tbody tr.selected td { background: var(--err-soft); }
 @media (max-width: 860px) { .bulkbar { top: 50px; } }
 
 /* 納品予定（ボード） */
-.board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.board { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
 @media (max-width: 1000px) { .board { grid-template-columns: 1fr; } }
 .board-col { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; min-height: 120px; }
 .board-col h2 { font-size: 14px; margin: 2px 4px 12px; display: flex; gap: 8px; align-items: center; }
-.board-col.col-todo h2::before, .board-col.col-doing h2::before, .board-col.col-done h2::before { content: ""; width: 8px; height: 8px; border-radius: 50%; }
+.board-col.col-todo h2::before, .board-col.col-done h2::before { content: ""; width: 8px; height: 8px; border-radius: 50%; }
 .board-col.col-todo h2::before { background: var(--muted); }
-.board-col.col-doing h2::before { background: var(--accent); }
 .board-col.col-done h2::before { background: var(--ok); }
 .board-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 24px 0; }
 .plan-card { background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--border-strong); border-radius: 10px;
