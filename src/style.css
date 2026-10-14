@@ -15,7 +15,7 @@
   --ok: #15803d; --ok-soft: #e9f7ee;
   --err: #c2362b; --err-soft: #fdeeed;
   --warn: #9a6100; --warn-soft: #fff5e1;
-  --low: #ea580c; /* 在庫が少ない数字の文字色（オレンジ） */
+  --low: var(--err); /* 在庫が少ない（10個以下）数字の文字色。0 と同じ赤 */
   --jp: #d1453b; --jp-soft: #fdecea;
   --cn: #c27a00; --cn-soft: #fff3dd;
   --wh: #0e7c86; --wh-soft: #e3f5f6;
@@ -290,7 +290,7 @@ tbody tr.group-row:hover td { background: var(--accent-soft); }
 
 /* 在庫数の目印 */
 .qty { font-weight: 700; font-variant-numeric: tabular-nums; }
-/* 在庫数は文字色だけで知らせる（0 は赤、少ないものは黄色） */
+/* 在庫数は文字色だけで知らせる（10個以下は 0 も含めて赤） */
 .qty-zero { color: var(--err); }
 .qty-low { color: var(--low); }
 .legend { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); white-space: nowrap; }

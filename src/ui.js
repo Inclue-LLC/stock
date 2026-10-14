@@ -73,7 +73,7 @@ export function locationOptions(locations, selected = null, blank = null) {
   return html`${blank ? html`<option value="">${blank}</option>` : ""}${groups}`;
 }
 
-/** 在庫数の表示。0 は赤、LOW_STOCK 以下は黄色で目立たせる。 */
+/** 在庫数の表示。LOW_STOCK 以下（0 を含む）は赤で目立たせる。 */
 export function stockQty(q, unit = "") {
   const u = unit ? html` <span class="muted">${unit}</span>` : "";
   if (q <= 0) return html`<span class="qty qty-zero" title="在庫なし">${n(q)}</span>${u}`;
@@ -82,7 +82,7 @@ export function stockQty(q, unit = "") {
 }
 
 export const stockLegend = () =>
-  html`<span class="legend"><span class="qty qty-zero">0</span> 在庫なし　<span class="qty qty-low">${LOW_STOCK}</span> ${LOW_STOCK}個以下</span>`;
+  html`<span class="legend"><span class="qty qty-low">赤</span> 在庫${LOW_STOCK}個以下（0を含む）</span>`;
 
 // ---- 在庫数の手入力 --------------------------------------------------------------
 
