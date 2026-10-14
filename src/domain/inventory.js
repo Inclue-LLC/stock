@@ -14,6 +14,7 @@ export const TYPES = { WAREHOUSE: "倉庫", CONSIGNMENT: "委託店舗" };
 export const KINDS = { IN: "納品", OUT: "販売", SET: "在庫更新", TRANSFER_OUT: "移動出", TRANSFER_IN: "移動入" };
 export const IMPORT_KIND_LABELS = { SET: "在庫数を上書き", IN: "納品・入庫（加算）", OUT: "販売・出庫（減算）" };
 export const SOURCES = { MANUAL: "直接入力", EXCEL: "Excel", CSV: "CSV", PDF: "PDF" };
+export const LOW_STOCK = 10; // この数以下を「残りわずか」として目立たせる
 export const CATEGORIES = Object.keys(REGIONS).flatMap((r) => Object.keys(TYPES).map((t) => [r, t]));
 
 export class StockError extends Error {}
@@ -278,8 +279,12 @@ export function saveLocation(W, location) {
 }
 
 /** 記録のない商品を削除する。 */
+/** 商品を削除する。各拠点のこの商品の在庫も削除する（入出庫履歴の記録自体は残るが、画面には表示されない）。 */
 export function deleteProduct(W, pid) {
-  if (productHasRecords(W, pid)) throw new StockError("入出庫履歴がある商品は削除できません");
+  if (!W.products.has(pid)) throw new StockError("商品が見つかりません");
+  for (const [lid, items] of W.stocks) {
+    if (items.delete(pid)) W.dirtyStocks.add(lid);
+  }
   W.products.delete(pid);
   W.catalogDirty = true;
 }

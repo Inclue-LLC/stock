@@ -1,7 +1,7 @@
 import { go } from "../app.js";
 import { listHistory, mutate } from "../db.js";
 import { KINDS, SOURCES, StockError, deleteProduct, saveProduct, sortedLocations } from "../domain/inventory.js";
-import { badge, dateTime, delta, empty, html, n } from "../ui.js";
+import { badge, dateTime, delta, empty, html, n, stockQty } from "../ui.js";
 import { productFields } from "./products.js";
 
 export const live = false; // 履歴を読む画面なので、データ変化のたびには描き直さない
@@ -27,7 +27,7 @@ export async function render(ctx) {
       <section class="card">
         <div class="card-head"><h2>拠点別の在庫</h2><span class="muted">合計 <b style="color:var(--text);font-size:16px">${n(total)}</b> ${product.unit}</span></div>
         ${stocks.length ? html`<ul class="loc-list" style="margin-top:8px">${stocks.map(({ location, s }) => html`
-          <li><span><a class="lname" href="#/locations/${location.id}">${location.name}</a> ${badge(location)}</span><b class="num">${n(s.q)}</b></li>`)}</ul>`
+          <li><span><a class="lname" href="#/locations/${location.id}">${location.name}</a> ${badge(location)}</span>${stockQty(s.q)}</li>`)}</ul>`
           : empty("この商品の在庫はありません。")}
       </section>
       <section class="card">
@@ -49,7 +49,7 @@ export async function render(ctx) {
           <label class="field"><span>備考</span><textarea name="note">${product.note}</textarea></label>
           <div class="actions">
             <button>保存</button>
-            <button type="button" class="danger" data-click="remove" data-confirm="この商品を削除しますか？">削除</button>
+            <button type="button" class="danger" data-click="remove" data-confirm="${`「${product.name}」を削除しますか？\n各拠点のこの商品の在庫も削除されます（元に戻せません）。`}">商品を削除</button>
           </div>
         </form>
       </section>
@@ -81,7 +81,8 @@ export const actions = {
     go(`#/products/${id}`, { msg: "商品を更新しました" });
   },
   async remove(ctx) {
+    const name = ctx.state.products.get(ctx.args[0])?.name || "";
     await mutate((W) => deleteProduct(W, ctx.args[0]));
-    go("#/products", { msg: "商品を削除しました" });
+    go("#/products", { msg: `商品「${name}」を削除しました` });
   },
 };

@@ -105,6 +105,15 @@ run("Firestore（エミュレータ）", () => {
     expect(s.stocks.get(locationByName(s, "東京倉庫").id).get(productByJan(s, JAN_A).id).q).toBe(5);
   });
 
+  it("在庫のある商品を削除できる（ルールで許可される）", async () => {
+    await db.applyImport(await upload([["JAN", "数量"], [JAN_A, 3]], { location: "大阪委託店" }));
+    await waitFor((x) => x.stocks.get(locationByName(x, "大阪委託店").id)?.size === 1);
+    const { deleteProduct } = await import("../src/domain/inventory.js");
+    await db.mutate((W) => deleteProduct(W, productByJan(W, JAN_A).id));
+    const s = await waitFor((x) => !productByJan(x, JAN_A));
+    expect(s.stocks.get(locationByName(s, "大阪委託店").id).size).toBe(0);
+  });
+
   it("取消した取込は反映できない", async () => {
     const id = await upload([["JAN", "数量"], [JAN_A, 1]]);
     await db.updateImport(id, { status: "cancelled" });

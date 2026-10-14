@@ -319,3 +319,17 @@ describe("拠点別の在庫一覧", () => {
     expect(locationStockRows(st, lid, { q: "パム" }).map((r) => r.product.jan)).toEqual([JAN_C]);
   });
 });
+
+describe("商品の削除", () => {
+  it("在庫がある商品も削除でき、各拠点の在庫からも消える", async () => {
+    const { deleteProduct, working: w, productTotals: totals } = await import("../src/domain/inventory.js");
+    let st = move(move(seeded(), "IN", 5), "IN", 2, "北京委託店");
+    const W = w(st);
+    deleteProduct(W, productByJan(W, JAN_A).id);
+    expect(W.dirtyStocks.size).toBe(2);
+    st = commit(W);
+    expect(productByJan(st, JAN_A)).toBeNull();
+    expect(totals(st)).toHaveLength(0);
+    expect(qty(st, JAN_A, "東京倉庫")).toBeNull();
+  });
+});

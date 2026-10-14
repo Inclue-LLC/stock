@@ -1,6 +1,6 @@
 import { go, searchHash } from "../app.js";
 import { locationStockRows, paginate } from "../domain/inventory.js";
-import { badge, dateTime, empty, html, icon, n, pager } from "../ui.js";
+import { badge, dateTime, empty, html, icon, n, pager, stockLegend, stockQty } from "../ui.js";
 import { download, storeExportWorkbook } from "../xlsxWrite.js";
 
 function filters(ctx) {
@@ -24,6 +24,7 @@ export function render(ctx) {
         <label class="search grow">${icon("search")}<input type="search" name="q" value="${f.q}" placeholder="JANコード・品番・商品名・キャラクター名で検索"></label>
         <label class="check"><input type="checkbox" name="hide_zero" value="1" ${f.includeZero ? "" : "checked"}> 在庫0を隠す</label>
         <button class="ghost">絞り込み</button>
+        ${stockLegend()}
       </form>
       ${page.items.length ? html`<div class="table-wrap"><table>
         <thead><tr><th>キャラクター</th><th>商品</th><th>JANコード</th><th class="r">在庫数</th></tr></thead>
@@ -31,7 +32,7 @@ export function render(ctx) {
           <td>${p.character}</td>
           <td class="name"><a href="#/products/${p.id}">${p.name}</a>${p.sku ? html`<span class="sub">${p.sku}</span>` : ""}</td>
           <td class="mono">${p.jan || "JANなし"}</td>
-          <td class="r ${q ? "" : "zero"}"><b>${n(q)}</b> <span class="muted">${p.unit}</span></td></tr>`)}</tbody>
+          <td class="r">${stockQty(q, p.unit)}</td></tr>`)}</tbody>
         <tfoot><tr><td colspan="3">合計 <span class="muted">${n(rows.length)}商品</span></td><td class="r">${n(total)}</td></tr></tfoot>
       </table></div>${pager(page, ctx.urlWith)}`
       : empty("該当する在庫はありません。", `#/imports?location_id=${location.id}`, "ファイルから更新する")}

@@ -57,7 +57,7 @@ const ICONS = {
 export const icon = (name) =>
   raw(`<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ""}</svg>`);
 
-import { REGIONS, TYPES } from "./domain/inventory.js";
+import { LOW_STOCK, REGIONS, TYPES } from "./domain/inventory.js";
 
 export const badge = (loc) =>
   html`<span class="chip r-${loc.region}">${REGIONS[loc.region]}</span><span class="chip t-${loc.type}">${TYPES[loc.type]}</span>`;
@@ -71,6 +71,17 @@ export function locationOptions(locations, selected = null, blank = null) {
   });
   return html`${blank ? html`<option value="">${blank}</option>` : ""}${groups}`;
 }
+
+/** 在庫数の表示。0 は赤、LOW_STOCK 以下は黄色で目立たせる。 */
+export function stockQty(q, unit = "") {
+  const u = unit ? html` <span class="muted">${unit}</span>` : "";
+  if (q <= 0) return html`<span class="qty qty-zero" title="在庫なし">${n(q)}</span>${u}`;
+  if (q <= LOW_STOCK) return html`<span class="qty qty-low" title="残りわずか（${LOW_STOCK}個以下）">${n(q)}</span>${u}`;
+  return html`<b>${n(q)}</b>${u}`;
+}
+
+export const stockLegend = () =>
+  html`<span class="legend"><span class="qty qty-zero">0</span> 在庫なし　<span class="qty qty-low">${LOW_STOCK}</span> ${LOW_STOCK}個以下</span>`;
 
 export const delta = (v) =>
   html`<span class="num ${v > 0 ? "pos" : v < 0 ? "neg" : ""}">${v > 0 ? "+" : ""}${n(v)}</span>`;
