@@ -6,7 +6,6 @@ import * as stocks from "./pages/stocks.js";
 import * as locations from "./pages/locations.js";
 import * as locationMaster from "./pages/locationMaster.js";
 import * as locationDetail from "./pages/locationDetail.js";
-import * as products from "./pages/products.js";
 import * as productDetail from "./pages/productDetail.js";
 import * as movements from "./pages/movements.js";
 import * as imports from "./pages/imports.js";
@@ -18,7 +17,6 @@ const ROUTES = [
   [/^\/locations$/, locations],
   [/^\/location-master$/, locationMaster],
   [/^\/locations\/([\w-]+)$/, locationDetail],
-  [/^\/products$/, products],
   [/^\/products\/([\w-]+)$/, productDetail],
   [/^\/movements$/, movements],
   [/^\/imports\/oz$/, ozImport],
@@ -28,10 +26,9 @@ const ROUTES = [
 
 // [リンク先, アイコン, 名前, この項目を選択中として表示する画面]
 const NAV = [
-  ["#/stocks", "boxes", "在庫一覧", ["/stocks"]],
+  ["#/stocks", "boxes", "在庫一覧", ["/stocks", "/products"]],
   ["#/locations", "store", "拠点別", ["/locations"]],
   ["#/imports", "upload", "在庫の更新", ["/imports", "/movements"]],
-  ["#/products", "tag", "商品マスタ", ["/products"]],
   ["#/location-master", "pin", "拠点マスタ", ["/location-master"]],
 ];
 

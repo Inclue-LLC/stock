@@ -2,13 +2,25 @@ import { go } from "../app.js";
 import { listHistory, mutate } from "../db.js";
 import { KINDS, SOURCES, StockError, deleteProduct, saveProduct, sortedLocations } from "../domain/inventory.js";
 import { badge, dateTime, delta, empty, html, n, stockQty } from "../ui.js";
-import { productFields } from "./products.js";
+import { tryNormalize } from "../domain/jan.js";
+import { parseQuantity } from "../domain/tables.js";
+
+/** 商品フォームの値を検証して取り出す。 */
+function productFields(form) {
+  const f = new FormData(form);
+  const s = (k) => String(f.get(k) || "").trim();
+  const [jan, err] = s("jan") ? tryNormalize(s("jan")) : [null, null];
+  if (err) throw new StockError(err);
+  if (!s("name")) throw new StockError("商品名を入力してください");
+  return { jan, name: s("name"), sku: s("sku"), brand: s("brand"), character: s("character"),
+    price: s("price") ? parseQuantity(s("price")) : null, unit: s("unit") || "個", note: String(f.get("note") || "") };
+}
 
 export const live = false; // 履歴を読む画面なので、データ変化のたびには描き直さない
 
 export async function render(ctx) {
   const product = ctx.state.products.get(ctx.args[0]);
-  if (!product) return { title: "商品が見つかりません", body: empty("この商品は削除されたか、URL が正しくありません。", "#/products", "商品マスタへ") };
+  if (!product) return { title: "商品が見つかりません", body: empty("この商品は削除されたか、URL が正しくありません。", "#/stocks", "在庫一覧へ") };
   const stocks = sortedLocations(ctx.state)
     .map((l) => ({ location: l, s: ctx.state.stocks.get(l.id)?.get(product.id) }))
     .filter((x) => x.s);
@@ -83,6 +95,6 @@ export const actions = {
   async remove(ctx) {
     const name = ctx.state.products.get(ctx.args[0])?.name || "";
     await mutate((W) => deleteProduct(W, ctx.args[0]));
-    go("#/products", { msg: `商品「${name}」を削除しました` });
+    go("#/stocks", { msg: `商品「${name}」を削除しました` });
   },
 };

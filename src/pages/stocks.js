@@ -1,8 +1,8 @@
 import { go, searchHash } from "../app.js";
-import { CATEGORIES, REGIONS, TYPES, paginate, productTotals, sortedLocations, stockRows } from "../domain/inventory.js";
+import { CATEGORIES, REGIONS, TYPES, paginate, productTotals, sortedLocations, stockRows, todayJst } from "../domain/inventory.js";
 import { badge, bulkBar, empty, html, icon, locationOptions, n, pager, selectCell, selectHeader, stockLegend, stockQty, wireBulk } from "../ui.js";
 import { bulkDelete } from "./bulkDelete.js";
-import { download, stockExportWorkbook } from "../xlsxWrite.js";
+import { backupWorkbook, download, stockExportWorkbook } from "../xlsxWrite.js";
 
 function filters(ctx) {
   return {
@@ -46,7 +46,8 @@ export function render(ctx) {
 
   return {
     title: "在庫一覧",
-    actions: html`<button class="ghost" data-click="export">${icon("download")}Excel出力</button>`,
+    actions: html`<button class="ghost" data-click="export">${icon("download")}Excel出力</button>
+      <button class="ghost" data-click="backup" title="商品・拠点・在庫のすべてを Excel に保存します">${icon("download")}全データのバックアップ</button>`,
     body: html`<section class="card">
       <form class="toolbar" data-action="search" data-search>
         <label class="search grow">${icon("search")}<input type="search" name="q" value="${f.q}" placeholder="JANコード・品番・商品名・キャラクター名で検索"></label>
@@ -74,6 +75,9 @@ export const actions = {
   bulkDelete,
   search(ctx, form) {
     go(searchHash(ctx, form, ["view"]));
+  },
+  async backup(ctx) {
+    await download(await backupWorkbook(ctx.state), `stock_backup_${todayJst()}.xlsx`);
   },
   async export(ctx) {
     const view = ctx.q("view") === "location" ? "location" : "product"; // 拠点ごとの行表示は「拠点別」画面の明細から

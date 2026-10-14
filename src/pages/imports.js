@@ -1,9 +1,9 @@
 import { go } from "../app.js";
-import { createImport, listImports } from "../db.js";
-import { parseStockFile } from "../domain/files.js";
-import { IMPORT_KIND_LABELS, KINDS, SOURCES, StockError, sortedLocations, todayJst } from "../domain/inventory.js";
+import { createImport, listImports, mutate } from "../db.js";
+import { parseProductFile, parseStockFile } from "../domain/files.js";
+import { IMPORT_KIND_LABELS, KINDS, SOURCES, StockError, importProducts, sortedLocations, todayJst } from "../domain/inventory.js";
 import { dateTime, dropzone, empty, html, icon, locationOptions } from "../ui.js";
-import { download, stockImportWorkbook } from "../xlsxWrite.js";
+import { download, productMasterWorkbook, stockImportWorkbook } from "../xlsxWrite.js";
 
 export const live = false;
 const MAX_UPLOAD = 20 * 1024 * 1024;
@@ -42,6 +42,15 @@ export async function render(ctx) {
         </ul></div>
       </section>
     </div>
+    <section class="card">
+      <div class="card-head"><h2>商品情報の一括登録・更新</h2><a href="#" data-click="productTemplate">${icon("download")} テンプレート</a></div>
+      <form data-action="importProducts" class="card-body form">
+        <p class="hint" style="margin:0">キャラクター名・ブランド・上代などの商品情報を、Excel / CSV でまとめて登録・更新します（在庫数は変わりません）。
+          「JANコード」「商品名」の列が必要です。同じJANコードの商品があれば、空欄以外の項目を上書きします。</p>
+        ${dropzone("商品情報のファイルを選択、またはドラッグ＆ドロップ", ".xlsx / .csv", ".xlsx,.xlsm,.csv")}
+        <div><button class="ghost">${icon("upload")}商品情報を取り込む</button></div>
+      </form>
+    </section>
     <section class="card">
       <div class="card-head"><h2>取込履歴</h2><a href="#/movements">${icon("history")} 入出庫履歴</a></div>
       ${batches.length ? html`<div class="table-wrap"><table>
@@ -89,5 +98,21 @@ export const actions = {
   },
   async template() {
     await download(await stockImportWorkbook(), "stock_import_template.xlsx");
+  },
+  async productTemplate() {
+    await download(await productMasterWorkbook(), "product_master.xlsx");
+  },
+  async importProducts(ctx, form) {
+    const file = form.querySelector("input[type=file]").files[0];
+    if (!file) return;
+    if (file.size > MAX_UPLOAD) throw new StockError("ファイルサイズが大きすぎます（上限20MB）");
+    const parsed = await parseProductFile(file.name, await file.arrayBuffer());
+    if (!parsed.rows.length) throw new StockError(parsed.warnings.join(" / ") || "商品が見つかりませんでした");
+    const result = await mutate((W) => ({ result: importProducts(W, parsed.rows) }));
+    const errors = result.errors.length
+      ? `エラー ${result.errors.length}件（取り込まれていません）: ${result.errors.slice(0, 10).join(" / ")}`
+        + (result.errors.length > 10 ? ` ほか${result.errors.length - 10}件` : "")
+      : null;
+    go("#/imports", { msg: `商品情報を取り込みました：新規 ${result.created}件、更新 ${result.updated}件`, error: errors });
   },
 };
