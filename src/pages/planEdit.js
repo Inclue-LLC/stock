@@ -1,7 +1,7 @@
 import { go } from "../app.js";
 import { completePlan, deletePlan, savePlan } from "../db.js";
 import { StockError, sortedLocations, todayJst } from "../domain/inventory.js";
-import { PLAN_STATUS, dueLabel, planQuantity, resolveLine } from "../domain/plans.js";
+import { PLAN_STATUS, planQuantity, resolveLine } from "../domain/plans.js";
 import { empty, html, icon, locationOptions, n } from "../ui.js";
 
 // 入力中に他の人の更新で消えないよう、自動では描き直さない。
@@ -19,7 +19,7 @@ export function render(ctx) {
   const dest = ctx.state.locations.get(plan.location_id);
   return {
     title: plan.title || "納品予定",
-    sub: html`<span class="chip k">${PLAN_STATUS[plan.status]}</span>　予定 ${dueLabel(plan)}${plan.applied ? html`　<span class="chip s-applied">在庫反映済</span>` : ""}`,
+    sub: html`<span class="chip k">${PLAN_STATUS[plan.status]}</span>${plan.applied ? html`　<span class="chip s-applied">在庫反映済</span>` : ""}`,
     actions: html`<a class="btn ghost" href="#/plans">納品予定の一覧へ</a>`,
     body: html`
     ${showComplete ? html`<section class="card ${ctx.q("complete") === "1" ? "highlight" : ""}" id="complete">
@@ -55,11 +55,8 @@ export function render(ctx) {
           <label class="field"><span>納品先</span><select name="location_id" required>${locationOptions(locs, plan.location_id || null, "選択してください")}</select></label>
           <label class="field"><span>出荷元（任意。完了時にここから在庫を減らします）</span><select name="source_id">${locationOptions(locs, plan.source_id || null, "なし（新規入荷など）")}</select></label>
         </div>
-        <div class="row">
-          <label class="field"><span>予定日</span><input type="date" name="due" value="${plan.due}" required></label>
-          <label class="field"><span>状態</span><select name="status">${Object.entries(PLAN_STATUS).map(([k, v]) =>
-            html`<option value="${k}" ${plan.status === k ? "selected" : ""}>${v}</option>`)}</select></label>
-        </div>
+        <label class="field" style="max-width:200px"><span>状態</span><select name="status">${Object.entries(PLAN_STATUS).map(([k, v]) =>
+          html`<option value="${k}" ${plan.status === k ? "selected" : ""}>${v}</option>`)}</select></label>
         <label class="field"><span>メモ</span><textarea name="memo" placeholder="担当者・連絡事項など">${plan.memo}</textarea></label>
         <div class="actions">
           <button>${icon("check")}保存する</button>
@@ -79,7 +76,7 @@ function readForm(form) {
   const s = (k) => String(f.get(k) || "").trim();
   if (!s("location_id")) throw new StockError("納品先を選択してください");
   if (s("source_id") && s("source_id") === s("location_id")) throw new StockError("出荷元と納品先が同じです");
-  return { title: s("title"), location_id: s("location_id"), source_id: s("source_id"), due: s("due"), status: s("status") || "todo",
+  return { title: s("title"), location_id: s("location_id"), source_id: s("source_id"), status: s("status") || "todo",
     memo: String(f.get("memo") || "") };
 }
 

@@ -1,48 +1,26 @@
 // 納品予定（タスク管理）。
 //
-// plan: { id, title, location_id: 納品先, source_id: 出荷元（任意）, due: 予定日 YYYY-MM-DD,
+// plan: { id, title, location_id: 納品先, source_id: 出荷元（任意）, title: 「拠点名＋追加納品」,
 //         status: todo/doing/done/cancelled, memo, lines: [{ product_id, jan, name, quantity }],
 //         done_date, applied: 在庫に反映したか, created_at, updated_at }
 
 import { tryNormalize } from "./jan.js";
-import { StockError, applyMovement, locationByName, productByJan, productsByName, saveProduct, todayJst } from "./inventory.js";
+import { StockError, applyMovement, locationByName, productByJan, productsByName, saveProduct } from "./inventory.js";
 
 export const PLAN_STATUS = { todo: "予定", doing: "準備中", done: "完了", cancelled: "取消" };
 export const OPEN_STATUSES = ["todo", "doing"];
 
-export function emptyPlan(today = todayJst()) {
-  return { id: null, title: "", location_id: "", source_id: "", due: today, status: "todo", memo: "", lines: [],
+export function emptyPlan() {
+  return { id: null, title: "", location_id: "", source_id: "", due: "", status: "todo", memo: "", lines: [],
     done_date: null, applied: false };
-}
-
-/** 予定日までの日数（過ぎていればマイナス）。 */
-export function daysUntil(due, today = todayJst()) {
-  return Math.round((Date.parse(`${due}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86400000);
-}
-
-/** 予定日の状態: overdue（過ぎている）/ today / soon（7日以内）/ ""。完了・取消は "" */
-export function dueClass(plan, today = todayJst()) {
-  if (!OPEN_STATUSES.includes(plan.status) || !plan.due) return "";
-  const d = daysUntil(plan.due, today);
-  if (d < 0) return "overdue";
-  if (d === 0) return "today";
-  return d <= 7 ? "soon" : "";
-}
-
-export function dueLabel(plan, today = todayJst()) {
-  if (!plan.due) return "";
-  const d = daysUntil(plan.due, today);
-  const date = plan.due.slice(5).replace("-", "/");
-  if (!OPEN_STATUSES.includes(plan.status)) return date;
-  if (d < 0) return `${date}（${-d}日過ぎ）`;
-  if (d === 0) return `${date}（今日）`;
-  return `${date}（あと${d}日）`;
 }
 
 export const planQuantity = (plan) => plan.lines.reduce((a, l) => a + (Number(l.quantity) || 0), 0);
 
 export function sortPlans(plans) {
-  return [...plans].sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999") || (a.title || "").localeCompare(b.title || ""));
+  // 登録の古い順（同じなら拠点名順）
+  const t = (p) => p.created_at?.getTime?.() ?? Infinity;
+  return [...plans].sort((a, b) => t(a) - t(b) || (a.title || "").localeCompare(b.title || "", "ja"));
 }
 
 /** 拠点宛ての、まだ完了していない納品予定。 */
@@ -85,7 +63,7 @@ export function lineFromText(state, text, quantity) {
 export function applyPlan(W, plan, date) {
   if (!W.locations.get(plan.location_id)) throw new StockError("納品先の拠点が見つかりません");
   if (plan.source_id && !W.locations.get(plan.source_id)) throw new StockError("出荷元の拠点が見つかりません");
-  const note = `納品予定「${plan.title || plan.due}」`;
+  const note = `納品予定「${plan.title}」`;
   let quantity = 0;
   plan.lines.forEach((line, i) => {
     const q = Number(line.quantity) || 0;
@@ -105,10 +83,10 @@ export function applyPlan(W, plan, date) {
 
 /**
  * 取込ファイルの行から納品予定を作る。拠点ごとに1件。
- * options: { due, source_id, title, location_id: 「拠点」列が空の行に使う納品先, filename }
+ * タイトルは「拠点名＋追加納品」。options: { source_id, location_id: 「拠点」列が空の行に使う納品先 }
  * 戻り値: { plans, errors: ["N行目: ..."], lines: 取り込んだ行数 }
  */
-export function plansFromRows(state, rows, { due, source_id = "", title = "", location_id = "", filename = "" } = {}) {
+export function plansFromRows(state, rows, { source_id = "", location_id = "" } = {}) {
   const groups = new Map();
   const errors = [];
   let lines = 0;
@@ -139,10 +117,8 @@ export function plansFromRows(state, rows, { due, source_id = "", title = "", lo
       : { product_id: null, jan: code || "", name: row.name, character: row.character || "", quantity: row.quantity });
     lines++;
   });
-  const base = title || filename.replace(/\.[^.]+$/, "") || "納品予定";
   const plans = [...groups].map(([lid, items]) => ({
-    ...emptyPlan(due), title: groups.size > 1 ? `${base}（${state.locations.get(lid).name}）` : base,
-    location_id: lid, source_id, due, lines: items,
+    ...emptyPlan(), title: `${state.locations.get(lid).name}追加納品`, location_id: lid, source_id, lines: items,
   }));
   return { plans, errors, lines };
 }

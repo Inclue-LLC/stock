@@ -204,7 +204,7 @@ export async function completePlan(id, date, apply) {
     const data = { ...planData({ ...plan, status: "done", done_date: date, applied: plan.applied || apply }),
       created_at: snap.data().created_at, updated_at: serverTimestamp() };
     return { result, writes: [[planRef(id), data]],
-      history: { filename: `納品予定: ${plan.title || plan.due}`, source: "MANUAL" } };
+      history: { filename: `納品予定: ${plan.title}`, source: "MANUAL" } };
   }, { reads: [planRef(id)] });
 }
 

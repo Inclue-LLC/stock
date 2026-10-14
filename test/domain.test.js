@@ -338,17 +338,6 @@ describe("商品の削除", () => {
 });
 
 describe("納品予定", () => {
-  it("予定日の表示（過ぎた・今日・7日以内）", async () => {
-    const { dueClass, dueLabel } = await import("../src/domain/plans.js");
-    const t = "2026-10-14";
-    expect(dueClass({ status: "todo", due: "2026-10-10" }, t)).toBe("overdue");
-    expect(dueClass({ status: "doing", due: "2026-10-14" }, t)).toBe("today");
-    expect(dueClass({ status: "todo", due: "2026-10-20" }, t)).toBe("soon");
-    expect(dueClass({ status: "todo", due: "2026-11-30" }, t)).toBe("");
-    expect(dueClass({ status: "done", due: "2026-10-10" }, t)).toBe("");
-    expect(dueLabel({ status: "todo", due: "2026-10-10" }, t)).toBe("10/10（4日過ぎ）");
-  });
-
   it("明細の入力（JAN・商品名）と、完了時の在庫反映（出荷元から減算・納品先に加算）", async () => {
     const { applyPlan, lineFromText } = await import("../src/domain/plans.js");
     let st = move(seeded(), "IN", 10, "東京倉庫");
@@ -389,12 +378,12 @@ describe("納品予定の Excel 取込", () => {
       [JAN_A, null, null, 0, "大阪委託店"],         // 数量0
     ]);
     const parsed = await parseStockFile("11月納品.xlsx", data);
-    const r = plansFromRows(st, parsed.rows, { due: "2026-11-01", filename: "11月納品.xlsx",
+    const r = plansFromRows(st, parsed.rows, {
       location_id: locationByName(st, "東京倉庫").id });
     expect(r.lines).toBe(4);
     expect(r.errors).toHaveLength(3);
     expect(r.plans.map((p) => [p.title, p.lines.length])).toEqual([
-      ["11月納品（大阪委託店）", 2], ["11月納品（北京委託店）", 1], ["11月納品（東京倉庫）", 1]]);
+      ["大阪委託店追加納品", 2], ["北京委託店追加納品", 1], ["東京倉庫追加納品", 1]]);
     expect(r.plans[0].lines[1]).toMatchObject({ product_id: null, jan: JAN_B, name: "新商品B", character: "タルト", quantity: 5 });
     // 完了時: 新規商品はキャラクター名付きで登録、既存商品の空欄のキャラクター名を補う
     const W = working(st);
