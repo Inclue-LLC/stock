@@ -1,6 +1,6 @@
 // ダウンロード用の Excel（テンプレート・出力）を作る。ExcelJS は大きいので必要なときだけ読み込む。
 
-import { CATEGORIES, REGIONS, TYPES, locationStockRows, productTotals, sortedProducts, stockRows } from "./domain/inventory.js";
+import { REGIONS, TYPES, locationStockRows, productLocationTotals, sortedProducts, stockRows } from "./domain/inventory.js";
 
 const FONT = "Meiryo UI";
 const fill = (argb) => ({ type: "pattern", pattern: "solid", fgColor: { argb } });
@@ -185,10 +185,11 @@ export async function stockExportWorkbook(state, view, filters) {
         s.location.name, s.q]);
     }
   } else {
-    headerRow(ws, ["JANコード", "キャラクター名", "商品名", ...CATEGORIES.map(([r, t]) => `${REGIONS[r]}・${TYPES[t]}`), "合計"]);
-    for (const [p, ...qtys] of productTotals(state, filters.q, !filters.includeZero, filters.characters)) {
-      ws.addRow([p.jan, p.character, p.name, ...qtys]);
-    }
+    // 拠点ごとの列（見出しは「拠点名（日本・倉庫）」）
+    const { locations, rows } = productLocationTotals(state, { q: filters.q, onlyInStock: !filters.includeZero, characters: filters.characters });
+    headerRow(ws, ["JANコード", "キャラクター名", "商品名", ...locations.map((l) => `${l.name}（${REGIONS[l.region]}・${TYPES[l.type]}）`), "合計"]);
+    for (const [p, ...qtys] of rows) ws.addRow([p.jan, p.character, p.name, ...qtys]);
+    for (let i = 0; i <= locations.length; i++) ws.getColumn(4 + i).width = 16;
   }
   ws.getColumn(1).numFmt = "@";
   ws.getColumn(1).width = 16;

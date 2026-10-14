@@ -331,6 +331,16 @@ describe("キャラクター名", () => {
     expect(renamed.flatMap((p) => p.lines.map((l) => l.name))).toEqual(["商品A 新版", "商品A 新版"]);
   });
 
+  it("在庫一覧: 拠点ごとの列（地域 → 種別 → 名前順）と合計", async () => {
+    const { productLocationTotals } = await import("../src/domain/inventory.js");
+    let st = move(seeded(), "IN", 5);
+    st = move(st, "IN", 2, "北京委託店");
+    const { locations, rows } = productLocationTotals(st);
+    expect(locations.map((l) => l.name)).toEqual(["東京倉庫", "大阪委託店", "上海倉庫", "北京委託店"]);
+    const [p, ...q] = rows.find(([x]) => x.jan === JAN_A);
+    expect([p.name, ...q]).toEqual(["商品A", 5, 0, 0, 2, 7]);
+  });
+
   it("出力する Excel に品番・単位の列はない", async () => {
     const { stockExportWorkbook, backupWorkbook } = await import("../src/xlsxWrite.js");
     const st = seeded();

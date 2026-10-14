@@ -364,3 +364,9 @@ td.qty-cell { padding-top: 6px; padding-bottom: 6px; }
 .qty-pop-rows { display: grid; gap: 6px; max-height: 50vh; overflow: auto; }
 .qty-pop-rows label { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; }
 .qty-pop-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* 在庫一覧（拠点ごとの列） */
+table.by-location th.grp { text-align: center; white-space: nowrap; border-bottom: 1px solid var(--border); }
+table.by-location th.loc { white-space: nowrap; font-size: 12px; color: var(--text-2); }
+table.by-location .grp-start { border-left: 1px solid var(--border); }
+table.by-location td.name { min-width: 220px; }

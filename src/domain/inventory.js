@@ -140,6 +140,24 @@ export function productTotals(state, q = "", onlyInStock = false, characters = [
   return rows;
 }
 
+/**
+ * 商品ごとに、拠点ごとの在庫数を返す。{ locations: 拠点（地域 → 種別 → 名前順）, rows: [[商品, 拠点ごとの数..., 合計]] }
+ * characters: 絞り込むキャラクター名（"" はキャラクター名なし）。空なら全件。
+ */
+export function productLocationTotals(state, { q = "", onlyInStock = false, characters = [] } = {}) {
+  const chars = new Set(characters);
+  const locations = sortedLocations(state);
+  const rows = [];
+  for (const p of sortedProducts(state)) {
+    if (!matches(p, q) || (chars.size && !chars.has(p.character || ""))) continue;
+    const qtys = locations.map((l) => state.stocks.get(l.id)?.get(p.id)?.q || 0);
+    const total = qtys.reduce((a, b) => a + b, 0);
+    if (onlyInStock && total === 0) continue;
+    rows.push([p, ...qtys, total]);
+  }
+  return { locations, rows };
+}
+
 export function productTotal(state, pid) {
   let total = 0;
   for (const items of state.stocks.values()) total += items.get(pid)?.q || 0;

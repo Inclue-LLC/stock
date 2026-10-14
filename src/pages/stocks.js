@@ -1,5 +1,5 @@
-import { CATEGORIES, REGIONS, TYPES, characterList, currentQty, paginate, productTotals, sortedLocations, todayJst } from "../domain/inventory.js";
-import { bulkBar, empty, html, icon, n, pager, qtyInput, selectCell, selectHeader, stockLegend, stockQty, wireBulk, wireQtyEdit } from "../ui.js";
+import { REGIONS, TYPES, characterList, currentQty, paginate, productLocationTotals, todayJst } from "../domain/inventory.js";
+import { bulkBar, empty, html, icon, n, pager, qtyInput, raw, selectCell, stockLegend, stockQty, wireBulk, wireQtyEdit } from "../ui.js";
 import { saveQtyAction } from "./qtyEdit.js";
 import { bulkDelete } from "./bulkDelete.js";
 import { backupWorkbook, download, stockExportWorkbook } from "../xlsxWrite.js";
@@ -25,24 +25,39 @@ function toggleUrl(ctx, selected, c) {
 
 export function render(ctx) {
   const f = filters(ctx);
-  const items = productTotals(ctx.state, "", false, f.characters);
+  const { locations, rows: items } = productLocationTotals(ctx.state, { characters: f.characters });
   const page = paginate(items, 1, Infinity); // 1ページに全件表示
   const chars = characterList(ctx.state);
   const hasNone = [...ctx.state.products.values()].some((p) => !p.character);
   const options = [...chars.map((c) => [c, c]), ...(hasNone ? [[NONE, "キャラクター名なし"]] : [])];
+  // 見出し1段目: 地域・種別のまとまり（日本・倉庫 など）。2段目: 拠点名
+  const groups = [];
+  const starts = new Set(); // まとまりの最初の列（左に区切り線）
+  locations.forEach((l, i) => {
+    const last = groups.at(-1);
+    if (last && last.region === l.region && last.type === l.type) last.span++;
+    else {
+      groups.push({ region: l.region, type: l.type, span: 1 });
+      starts.add(i);
+    }
+  });
+  const first = (i) => (starts.has(i) ? "grp-start" : "");
 
-  const table = html`<table>
-      <thead><tr>${selectHeader()}<th>キャラクター</th><th>商品</th><th>JANコード</th>
-        ${CATEGORIES.map(([r, t]) => html`<th class="r">${REGIONS[r]}<br><span class="chip t-${t}">${TYPES[t]}</span></th>`)}
-        <th class="r">合計</th></tr></thead>
+  const table = html`<table class="by-location">
+      <thead>
+        <tr>${raw('<th class="sel" rowspan="2"></th>')}<th rowspan="2">キャラクター</th><th rowspan="2">商品</th><th rowspan="2">JANコード</th>
+          ${groups.map((g) => html`<th class="grp grp-start" colspan="${g.span}">${REGIONS[g.region]} <span class="chip t-${g.type}">${TYPES[g.type]}</span></th>`)}
+          <th class="r grp-start" rowspan="2">合計</th></tr>
+        <tr>${locations.map((l, i) => html`<th class="r loc ${first(i)}">${l.name}</th>`)}</tr>
+      </thead>
       <tbody>${page.items.map(([p, ...qtys]) => html`<tr>
         ${selectCell(p)}
         <td>${p.character}</td>
         <td class="name"><a href="#/products/${p.id}">${p.name}</a></td>
         <td class="mono">${p.jan || "JANなし"}</td>
-        ${qtys.slice(0, -1).map((q, i) => html`<td class="r ${q ? "" : "zero"}"><button type="button" class="qty-open" data-pid="${p.id}"
-          data-cat="${i}" title="クリックして拠点ごとの在庫数を編集">${q ? n(q) : "–"}</button></td>`)}
-        <td class="r">${stockQty(qtys[qtys.length - 1])}</td></tr>`)}</tbody>
+        ${qtys.slice(0, -1).map((q, i) => html`<td class="r ${q ? "" : "zero"} ${first(i)}"><button type="button" class="qty-open" data-pid="${p.id}"
+          data-lid="${locations[i].id}" title="クリックして在庫数を編集（${locations[i].name}）">${q ? n(q) : "–"}</button></td>`)}
+        <td class="r grp-start">${stockQty(qtys[qtys.length - 1])}</td></tr>`)}</tbody>
     </table>`;
 
   return {
@@ -55,7 +70,7 @@ export function render(ctx) {
         <a class="pick ${f.characters.length ? "" : "on"}" href="#/stocks">すべて</a>
         ${options.map(([value, label]) => html`<a class="pick ${f.characters.includes(value) ? "on" : ""}" href="${toggleUrl(ctx, f.characters, value)}">${label}</a>`)}
         <span class="grow"></span>
-        <span class="hint">数字をクリックすると在庫数を編集できます</span>
+        <span class="hint">数字をクリックすると在庫数を編集できます。拠点名は「拠点マスタ」で変更できます</span>
         ${stockLegend()}
       </div>
       ${page.items.length ? html`<form data-action="bulkDelete">${bulkBar()}<div class="table-wrap">${table}</div></form>${pager(page, ctx.urlWith)}`
@@ -72,19 +87,19 @@ export function mounted(ctx, root) {
   });
 }
 
-/** 区分（日本・倉庫など）のセルをクリック → その区分の拠点ごとの在庫数を編集する小窓。 */
+/** 拠点の在庫数をクリック → その拠点の在庫数を編集する小窓。 */
 function openEditor(ctx, root, cell) {
   closeEditor(root);
   const state = ctx.state;
   const product = state.products.get(cell.dataset.pid);
-  const [region, type] = CATEGORIES[Number(cell.dataset.cat)];
-  const locs = sortedLocations(state).filter((l) => l.region === region && l.type === type);
-  if (!product) return;
+  const loc = state.locations.get(cell.dataset.lid);
+  if (!product || !loc) return;
+  const locs = [loc];
   const pop = document.createElement("form");
   pop.className = "qty-pop";
   pop.dataset.action = "saveQty";
   pop.innerHTML = String(html`
-    <div class="qty-pop-head"><b>${product.name}</b><span class="muted">${REGIONS[region]}・${TYPES[type]}</span></div>
+    <div class="qty-pop-head"><b>${product.name}</b><span class="muted">${REGIONS[loc.region]}・${TYPES[loc.type]}</span></div>
     ${locs.length ? html`<div class="qty-pop-rows">${locs.map((l) => html`<label><span>${l.name}</span>
       ${qtyInput(product.id, l.id, currentQty(state, l.id, product.id), `${l.name}の在庫数`)}</label>`)}</div>`
       : html`<p class="hint">この区分の拠点がありません。拠点マスタで追加してください。</p>`}
