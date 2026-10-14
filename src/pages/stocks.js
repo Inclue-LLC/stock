@@ -22,18 +22,20 @@ export function render(ctx) {
 
   const table = view === "product"
     ? html`<table>
-        <thead><tr><th>商品</th><th>ブランド</th><th>JANコード</th>
+        <thead><tr><th>キャラクター</th><th>商品</th><th>ブランド</th><th>JANコード</th>
           ${CATEGORIES.map(([r, t]) => html`<th class="r">${REGIONS[r]}<br><span class="chip t-${t}">${TYPES[t]}</span></th>`)}
           <th class="r">合計</th></tr></thead>
         <tbody>${page.items.map(([p, ...qtys]) => html`<tr>
+          <td>${p.character}</td>
           <td class="name"><a href="#/products/${p.id}">${p.name}</a>${p.sku ? html`<span class="sub">${p.sku}</span>` : ""}</td>
           <td>${p.brand}</td><td class="mono">${p.jan || "JANなし"}</td>
           ${qtys.slice(0, -1).map((q) => html`<td class="r ${q ? "" : "zero"}">${q ? n(q) : "–"}</td>`)}
           <td class="r"><b>${n(qtys[qtys.length - 1])}</b></td></tr>`)}</tbody>
       </table>`
     : html`<table>
-        <thead><tr><th>商品</th><th>JANコード</th><th>拠点</th><th>区分</th><th class="r">在庫数</th></tr></thead>
+        <thead><tr><th>キャラクター</th><th>商品</th><th>JANコード</th><th>拠点</th><th>区分</th><th class="r">在庫数</th></tr></thead>
         <tbody>${page.items.map((s) => html`<tr>
+          <td>${s.product.character}</td>
           <td class="name"><a href="#/products/${s.product.id}">${s.product.name}</a>${s.product.sku ? html`<span class="sub">${s.product.sku}</span>` : ""}</td>
           <td class="mono">${s.product.jan || "JANなし"}</td><td>${s.location.name}</td><td>${badge(s.location)}</td>
           <td class="r ${s.q < 0 ? "neg" : ""}"><b>${n(s.q)}</b> <span class="muted">${s.product.unit}</span></td></tr>`)}</tbody>
@@ -44,7 +46,7 @@ export function render(ctx) {
     actions: html`<button class="ghost" data-click="export">${icon("download")}Excel出力</button>`,
     body: html`<section class="card">
       <form class="toolbar" data-action="search" data-search>
-        <label class="search grow">${icon("search")}<input type="search" name="q" value="${f.q}" placeholder="JANコード・品番・商品名で検索"></label>
+        <label class="search grow">${icon("search")}<input type="search" name="q" value="${f.q}" placeholder="JANコード・品番・商品名・キャラクター名で検索"></label>
         ${view === "location" ? html`
           <select name="region"><option value="">すべての地域</option>
             ${Object.entries(REGIONS).map(([k, v]) => html`<option value="${k}" ${f.region === k ? "selected" : ""}>${v}</option>`)}</select>

@@ -43,7 +43,7 @@ export function render(ctx) {
         ${hasAdj ? html`<td class="r">${n(sum(group, "adjusted"))}</td>` : ""}
         <td class="r">${n(sum(group, "stock"))}</td><td colspan="2"></td></tr>` : ""}
       ${group.map((r) => html`<tr>
-        <td class="stick name"><a href="#/products/${r.product.id}">${r.product.name}</a><span class="sub mono">${r.product.jan || "JANなし"}</span></td>
+        <td class="stick name"><a href="#/products/${r.product.id}">${r.product.name}</a><span class="sub">${r.product.character ? html`${r.product.character}・` : ""}<span class="mono">${r.product.jan || "JANなし"}</span></span></td>
         <td class="r muted">${r.product.price == null ? "–" : n(r.product.price)}</td>
         ${dates.map((d) => html`<td class="r date ${r.deliveries[d] ? "" : "zero"}">${r.deliveries[d] ? n(r.deliveries[d]) : ""}</td>`)}
         <td class="r grp"><b>${n(r.delivered)}</b></td>
@@ -83,7 +83,7 @@ export function render(ctx) {
           <a href="${ctx.urlWith({ brand: null })}" class="${f.brand ? "" : "active"}">すべて</a>
           ${rep.brands.map((b) => html`<a href="${ctx.urlWith({ brand: b })}" class="${f.brand === b ? "active" : ""}">${b}</a>`)}
         </div>` : ""}
-        <label class="search grow">${icon("search")}<input type="search" name="q" value="${f.q}" placeholder="商品名・JANコードで検索"></label>
+        <label class="search grow">${icon("search")}<input type="search" name="q" value="${f.q}" placeholder="商品名・キャラクター名・JANコードで検索"></label>
         ${rep.delivery_dates.length ? html`<label class="check"><input type="checkbox" name="dates" value="0" ${showDates ? "" : "checked"} data-autosubmit> 納品日ごとの列を隠す</label>` : ""}
         <button class="ghost">検索</button>
       </form>

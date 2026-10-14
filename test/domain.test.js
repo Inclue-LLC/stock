@@ -258,3 +258,45 @@ describe("集計", () => {
     expect(storeReport(st, lid, { brand: "Lovely MongMong" }).rows.map((r) => r.product.jan)).toEqual([JAN_B]);
   });
 });
+
+// ---- キャラクター名 ----------------------------------------------------------------
+
+describe("キャラクター名", () => {
+  it("商品マスタ・在庫取込で読み取り、一覧はキャラクター名 → JANコード順に並ぶ", async () => {
+    const st = seeded();
+    const data = await xlsx([
+      ["JANコード", "商品名", "キャラクター名"],
+      [JAN_D, "ステッカー", "ポポ"],
+      [JAN_B, "缶バッジ", "タルト"],
+      [JAN_C, "ぬいぐるみ", "タルト"],
+      [null, "JANなし商品", "パム"],
+    ]);
+    const W = working(st);
+    importProducts(W, (await parseProductFile("m.xlsx", data)).rows);
+    // 在庫取込: 「キャラ」列でもマスタの空欄を補う（既存の商品A）
+    const stock = await xlsx([["JAN", "キャラ", "数量"], [JAN_A, "パム", 3]]);
+    const batch = { ...(await batchFrom("s.xlsx", stock, "IN", commit(W), "東京倉庫")) };
+    applyBatch(W, batch);
+    const order = productTotals(commit(W)).map(([p]) => `${p.character}:${p.jan || "なし"}`);
+    // キャラクター名（文字コード順）→ JAN 順。JAN なしは同じキャラクターの最後
+    expect(order).toEqual([`タルト:${JAN_B}`, `タルト:${JAN_C}`, `パム:${JAN_A}`, "パム:なし", `ポポ:${JAN_D}`]);
+    expect(productByJan(W, JAN_A).character).toBe("パム");
+    expect(productTotals(commit(W), "タルト")).toHaveLength(2); // キャラクター名で検索できる
+  });
+
+  it("商品マスタのテンプレートにキャラクター名の列があり、そのまま取り込める", async () => {
+    const { productMasterWorkbook, stockImportWorkbook } = await import("../src/xlsxWrite.js");
+    const wb = await productMasterWorkbook(5);
+    const ws = wb.getWorksheet("商品マスタ");
+    expect(ws.getRow(1).values.slice(1, 9)).toEqual(["JANコード", "商品名", "キャラクター名", "ブランド", "上代（税込）", "品番", "単位", "備考"]);
+    ws.getCell("A2").value = JAN_B;
+    ws.getCell("B2").value = "商品B";
+    ws.getCell("C2").value = "タルト";
+    ws.getCell("E2").value = 1650;
+    const parsed = await parseProductFile("t.xlsx", Buffer.from(await wb.xlsx.writeBuffer()));
+    expect(parsed.rows).toHaveLength(1);
+    expect([parsed.rows[0].character, parsed.rows[0].price]).toEqual(["タルト", 1650]);
+    const sw = (await stockImportWorkbook(3)).getWorksheet("在庫取込");
+    expect(sw.getRow(1).values.slice(1, 7)).toEqual(["JANコード", "商品名", "キャラクター名", "数量", "拠点", "備考"]);
+  });
+});

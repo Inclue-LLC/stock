@@ -14,6 +14,7 @@ export const HEADER_ALIASES = {
   location: ["拠点", "倉庫", "店舗", "保管場所", "委託先", "location", "warehouse", "store", "仓库", "门店", "店铺"],
   unit: ["単位", "unit", "单位"],
   brand: ["ブランド", "brand", "メーカー", "品牌"],
+  character: ["キャラクター", "キャラクター名", "キャラ", "キャラ名", "character", "角色", "角色名", "人物"],
   price: ["上代", "上代（税込）", "上代(税込)", "上代税込", "売価", "売価（税込）", "定価", "販売価格", "価格",
     "price", "retail price", "零售价", "售价"],
   note: ["備考", "メモ", "note", "remarks", "备注"],
@@ -108,6 +109,7 @@ export function rowsFromTable(table, result, label = "", required = STOCK_REQUIR
       location: location === null || location === "" ? null : String(location),
       unit: text(cell(cells, "unit")),
       brand: text(cell(cells, "brand")),
+      character: text(cell(cells, "character")),
       price: parseQuantity(cell(cells, "price")),
       note: text(cell(cells, "note")),
     });
@@ -145,7 +147,7 @@ export function rowsFromLines(lines) {
     const isJan = /^(\d{8}|\d{13})$/.test(m[1]);
     rows.push({
       jan: isJan ? m[1] : "", sku: isJan ? "" : m[1], name: m[2].trim(), quantity: parseQuantity(m[3]),
-      location: null, unit: "", brand: "", price: null, note: "",
+      location: null, unit: "", brand: "", character: "", price: null, note: "",
     });
   }
   return rows;

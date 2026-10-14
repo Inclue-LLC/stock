@@ -21,7 +21,7 @@ export async function render(ctx) {
     .slice(0, 100);
   return {
     title: product.name,
-    sub: html`${product.brand ? html`${product.brand}　` : ""}<span class="mono">${product.jan ? `JAN ${product.jan}` : "JANなし"}</span>${product.sku ? `　品番 ${product.sku}` : ""}`,
+    sub: html`${product.character ? html`${product.character}　` : ""}${product.brand ? html`${product.brand}　` : ""}<span class="mono">${product.jan ? `JAN ${product.jan}` : "JANなし"}</span>${product.sku ? `　品番 ${product.sku}` : ""}`,
     body: html`
     <div class="grid two">
       <section class="card">
@@ -39,10 +39,13 @@ export async function render(ctx) {
           </div>
           <label class="field"><span>商品名</span><input name="name" value="${product.name}" required></label>
           <div class="row">
+            <label class="field"><span>キャラクター名</span><input name="character" value="${product.character || ""}"></label>
             <label class="field"><span>ブランド</span><input name="brand" value="${product.brand}"></label>
-            <label class="field"><span>上代（税込）</span><input name="price" value="${product.price ?? ""}" inputmode="numeric"></label>
           </div>
-          <div class="row"><label class="field"><span>単位</span><input name="unit" value="${product.unit}"></label><span></span></div>
+          <div class="row">
+            <label class="field"><span>上代（税込）</span><input name="price" value="${product.price ?? ""}" inputmode="numeric"></label>
+            <label class="field"><span>単位</span><input name="unit" value="${product.unit}"></label>
+          </div>
           <label class="field"><span>備考</span><textarea name="note">${product.note}</textarea></label>
           <div class="actions">
             <button>保存</button>

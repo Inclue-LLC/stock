@@ -1,7 +1,7 @@
 // 在庫の中心となる処理（画面や保存先に依存しない）。
 //
 // 状態（state）の形:
-//   products:  Map<id, {id, name, jan, sku, brand, price, unit, note}>
+//   products:  Map<id, {id, name, jan, sku, brand, character, price, unit, note}>
 //   locations: Map<id, {id, name, region, type, note, updated_at}>
 //   stocks:    Map<拠点id, Map<商品id, {q: 在庫, del: 納品累計, sold: 販売累計, adj: 調整累計, dels: {日付: 納品数}}>>
 //
@@ -61,8 +61,14 @@ export function sortedLocations(state) {
     || ja(a.name, b.name));
 }
 
+/** 商品の並び順: キャラクター名 → JANコード → 商品名（キャラクター名・JAN が空のものは後ろ）。 */
+export function compareProducts(a, b) {
+  return ja(a.character || "\uffff", b.character || "\uffff") || ja(a.jan || "\uffff", b.jan || "\uffff")
+    || ja(a.name, b.name);
+}
+
 export function sortedProducts(state) {
-  return [...state.products.values()].sort((a, b) => ja(a.name, b.name) || ja(a.jan || "", b.jan || ""));
+  return [...state.products.values()].sort(compareProducts);
 }
 
 /** JAN（前方一致）・品番・商品名（部分一致）で絞り込む。 */
@@ -71,7 +77,7 @@ export function matches(product, q) {
   if (!q) return true;
   const ql = q.toLowerCase();
   return (product.jan || "").startsWith(q) || (product.sku || "").toLowerCase().includes(ql)
-    || product.name.toLowerCase().includes(ql);
+    || product.name.toLowerCase().includes(ql) || (product.character || "").toLowerCase().includes(ql);
 }
 
 export function stockEntry(state, lid, pid) {
@@ -99,7 +105,7 @@ export function stockRows(state, { region, type, locationId, q, includeZero } = 
   const rows = allStocks(state).filter((s) =>
     (!region || s.location.region === region) && (!type || s.location.type === type)
     && (!locationId || s.location.id === locationId) && matches(s.product, q) && (includeZero || s.q !== 0));
-  return rows.sort((a, b) => ja(a.product.name, b.product.name) || ja(a.product.jan || "", b.product.jan || "")
+  return rows.sort((a, b) => compareProducts(a.product, b.product)
     || RORDER.indexOf(a.location.region) - RORDER.indexOf(b.location.region)
     || TORDER.indexOf(a.location.type) - TORDER.indexOf(b.location.type) || ja(a.location.name, b.location.name));
 }
@@ -253,7 +259,7 @@ export function saveProduct(W, product) {
     const dup = productByJan(W, product.jan);
     if (dup && dup.id !== product.id) throw new StockError(`JANコード「${product.jan}」はすでに登録されています`);
   }
-  const p = { name: "", jan: null, sku: "", brand: "", price: null, unit: "個", note: "", ...product };
+  const p = { name: "", jan: null, sku: "", brand: "", character: "", price: null, unit: "個", note: "", ...product };
   p.id = p.id || newId();
   W.products.set(p.id, p);
   W.catalogDirty = true;
@@ -326,7 +332,7 @@ export function importProducts(W, rows) {
     } else if (!seen.has(key)) {
       result.updated++;
     }
-    for (const f of ["name", "sku", "unit", "note", "brand"]) if (row[f]) product[f] = row[f];
+    for (const f of ["name", "sku", "unit", "note", "brand", "character"]) if (row[f]) product[f] = row[f];
     if (row.price !== null && row.price !== undefined) product.price = row.price;
     seen.set(key, saveProduct(W, product));
   });
@@ -401,11 +407,13 @@ export function applyBatch(W, batch, now = Date.now()) {
     let product = item.product ? W.products.get(item.product.id) : created.get(item.key);
     if (!product) {
       product = saveProduct(W, { jan: item.jan_code, sku: item.sku || "", name: item.name, unit: item.unit || "個",
-        brand: item.brand || "", price: item.price ?? null });
+        brand: item.brand || "", character: item.character || "", price: item.price ?? null });
       created.set(item.key, product);
-    } else if ((!product.brand && item.brand) || (product.price == null && item.price != null)) {
-      // マスタの空欄（ブランド・上代）はファイルの値で補う
+    } else if ((!product.brand && item.brand) || (!product.character && item.character)
+      || (product.price == null && item.price != null)) {
+      // マスタの空欄（ブランド・キャラクター・上代）はファイルの値で補う
       product.brand = product.brand || item.brand || "";
+      product.character = product.character || item.character || "";
       if (product.price == null) product.price = item.price;
       saveProduct(W, product);
     }
@@ -444,7 +452,7 @@ export function storeReport(state, locationId, { brand = "", q = "" } = {}) {
   const brands = [...new Set(all.map((r) => r.product.brand).filter(Boolean))].sort(ja);
   const dates = [...new Set(all.flatMap((r) => Object.keys(r.deliveries).filter((d) => r.deliveries[d])))].sort();
   const rows = all.filter((r) => (!brand || r.product.brand === brand) && matches(r.product, q));
-  rows.sort((a, b) => ja(a.product.brand || "￿", b.product.brand || "￿") || ja(a.product.name, b.product.name));
+  rows.sort((a, b) => ja(a.product.brand || "\uffff", b.product.brand || "\uffff") || compareProducts(a.product, b.product));
   const total = (k) => rows.reduce((acc, r) => acc + (r[k] || 0), 0);
   return {
     rows, delivery_dates: dates, brands, total,

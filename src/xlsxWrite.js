@@ -1,6 +1,6 @@
 // ダウンロード用の Excel（テンプレート・出力）を作る。ExcelJS は大きいので必要なときだけ読み込む。
 
-import { CATEGORIES, REGIONS, TYPES, productTotals, stockRows, storeReport } from "./domain/inventory.js";
+import { CATEGORIES, REGIONS, TYPES, productTotals, sortedProducts, stockRows, storeReport } from "./domain/inventory.js";
 
 const FONT = "Meiryo UI";
 const fill = (argb) => ({ type: "pattern", pattern: "solid", fgColor: { argb } });
@@ -58,36 +58,37 @@ function janCheckFormula(c, rng) {
 export async function productMasterWorkbook(rows = 3000) {
   const wb = await workbook();
   const ws = wb.addWorksheet("商品マスタ");
-  header(ws, [["JANコード", 18], ["商品名", 40], ["ブランド", 20], ["上代（税込）", 13], ["品番", 16], ["単位", 9],
-    ["備考", 30], ["JANチェック（自動）", 20]], [REQUIRED, REQUIRED, HEADER, HEADER, HEADER, HEADER, HEADER, AUTO]);
+  header(ws, [["JANコード", 18], ["商品名", 40], ["キャラクター名", 18], ["ブランド", 20], ["上代（税込）", 13], ["品番", 16],
+    ["単位", 9], ["備考", 30], ["JANチェック（自動）", 20]],
+  [REQUIRED, REQUIRED, HEADER, HEADER, HEADER, HEADER, HEADER, HEADER, AUTO]);
   const last = rows + 1;
   for (let r = 2; r <= last; r++) {
     const row = ws.getRow(r);
-    for (let c = 1; c <= 8; c++) {
+    for (let c = 1; c <= 9; c++) {
       row.getCell(c).font = { name: FONT, size: 11 };
       row.getCell(c).border = BORDER;
     }
     row.getCell(1).numFmt = "@"; // JAN を文字列で保持（指数表記・先頭0落ち防止）
-    row.getCell(4).numFmt = "#,##0";
-    row.getCell(5).numFmt = "@";
-    const chk = row.getCell(8);
+    row.getCell(5).numFmt = "#,##0";
+    row.getCell(6).numFmt = "@";
+    const chk = row.getCell(9);
     chk.value = { formula: janCheckFormula(`A${r}`, `$A$2:$A$${last}`) };
     chk.font = { name: FONT, size: 10, color: { argb: "FF595959" } };
     chk.alignment = { horizontal: "center" };
   }
-  ws.autoFilter = `A1:H${last}`;
+  ws.autoFilter = `A1:I${last}`;
   ws.dataValidations.add(`A2:A${last}`, {
     type: "custom", formulae: ["OR(LEN(A2)=8,LEN(A2)=13)"], allowBlank: true, errorStyle: "warning",
     showErrorMessage: true, errorTitle: "JANコード", error: "JANコードは8桁または13桁の数字で入力してください。",
     showInputMessage: true, promptTitle: "JANコード", prompt: "8桁または13桁。先頭の0もそのまま入力できます。",
   });
-  ws.dataValidations.add(`F2:F${last}`, { type: "list", formulae: [`"${UNITS.join(",")}"`], allowBlank: true,
+  ws.dataValidations.add(`G2:G${last}`, { type: "list", formulae: [`"${UNITS.join(",")}"`], allowBlank: true,
     showErrorMessage: false });
-  ws.dataValidations.add(`D2:D${last}`, { type: "whole", operator: "greaterThanOrEqual", formulae: [0], allowBlank: true,
+  ws.dataValidations.add(`E2:E${last}`, { type: "whole", operator: "greaterThanOrEqual", formulae: [0], allowBlank: true,
     errorStyle: "warning", showErrorMessage: true, errorTitle: "上代", error: "上代は税込の金額（整数）で入力してください。" });
-  ws.addConditionalFormatting({ ref: `A2:A${last}`, rules: [{ type: "expression", formulae: ['AND(A2<>"",H2<>"OK")'],
+  ws.addConditionalFormatting({ ref: `A2:A${last}`, rules: [{ type: "expression", formulae: ['AND(A2<>"",I2<>"OK")'],
     style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFF8D7DA" } } } }] });
-  ws.addConditionalFormatting({ ref: `H2:H${last}`, rules: [{ type: "expression", formulae: ['AND(H2<>"",H2<>"OK")'],
+  ws.addConditionalFormatting({ ref: `I2:I${last}`, rules: [{ type: "expression", formulae: ['AND(I2<>"",I2<>"OK")'],
     style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFF8D7DA" } },
       font: { color: { argb: "FFC0392B" }, bold: true } } }] });
   productGuide(wb.addWorksheet("記入方法", { views: [{ showGridLines: false }] }));
@@ -100,7 +101,8 @@ function productGuide(ws) {
   ws.getCell("B2").font = { name: FONT, size: 16, bold: true };
   const notes = [
     "「商品マスタ」シートの2行目から、1行に1商品ずつ入力してください。",
-    "赤い見出しの列（JANコード・商品名）は必須です。青い見出しの列（ブランド・上代など）は任意です。",
+    "赤い見出しの列（JANコード・商品名）は必須です。青い見出しの列（キャラクター名・ブランド・上代など）は任意です。",
+    "一覧はキャラクター名 → JANコードの順に並びます。",
     "JAN のない商品は、JANコードを空欄にして商品名だけで登録できます。",
     "灰色の「JANチェック（自動）」列は自動で判定します。「OK」以外が出た行は JAN を見直してください。",
     "JAN の重複・桁数・チェックデジットに問題がある行は、JAN のセルが赤くなります。",
@@ -123,6 +125,7 @@ function productGuide(ws) {
   const items = [
     ["JANコード", "必須", "4580703202780", "8桁または13桁の数字。セルは文字列形式なので、先頭の0や13桁もそのまま入力できます。"],
     ["商品名", "必須", "むぎゅっとカードホルダー", "画面や帳票に表示される名前。"],
+    ["キャラクター名", "", "パム", "一覧の並び順（キャラクター名 → JANコード）と検索に使います。"],
     ["ブランド", "", "Lovely MongMong", "店舗別画面でブランドごとにまとめて表示します。"],
     ["上代（税込）", "", "1650", "税込の販売価格（円）。販売金額・在庫金額の計算に使います。"],
     ["品番", "", "SK-001", "社内の品番・型番など。JAN の代わりに品番で取込することもできます。"],
@@ -145,16 +148,16 @@ function productGuide(ws) {
 export async function stockImportWorkbook(rows = 1000) {
   const wb = await workbook();
   const ws = wb.addWorksheet("在庫取込");
-  header(ws, [["JANコード", 18], ["商品名", 36], ["数量", 10], ["拠点", 20], ["備考", 40]],
-    [REQUIRED, HEADER, REQUIRED, HEADER, HEADER]);
+  header(ws, [["JANコード", 18], ["商品名", 36], ["キャラクター名", 18], ["数量", 10], ["拠点", 20], ["備考", 40]],
+    [REQUIRED, HEADER, HEADER, REQUIRED, HEADER, HEADER]);
   for (let r = 2; r <= rows + 1; r++) {
     const row = ws.getRow(r);
-    for (let c = 1; c <= 5; c++) {
+    for (let c = 1; c <= 6; c++) {
       row.getCell(c).font = { name: FONT, size: 11 };
       row.getCell(c).border = BORDER;
     }
     row.getCell(1).numFmt = "@";
-    row.getCell(3).numFmt = "#,##0";
+    row.getCell(4).numFmt = "#,##0";
   }
   return wb;
 }
@@ -172,20 +175,20 @@ export async function stockExportWorkbook(state, view, filters) {
   const wb = await workbook();
   const ws = wb.addWorksheet("在庫");
   if (view === "location") {
-    headerRow(ws, ["JANコード", "品番", "商品名", "地域", "種別", "拠点", "数量", "単位"]);
+    headerRow(ws, ["JANコード", "品番", "キャラクター名", "商品名", "地域", "種別", "拠点", "数量", "単位"]);
     for (const s of stockRows(state, filters)) {
-      ws.addRow([s.product.jan, s.product.sku, s.product.name, REGIONS[s.location.region], TYPES[s.location.type],
+      ws.addRow([s.product.jan, s.product.sku, s.product.character, s.product.name, REGIONS[s.location.region], TYPES[s.location.type],
         s.location.name, s.q, s.product.unit]);
     }
   } else {
-    headerRow(ws, ["JANコード", "品番", "商品名", ...CATEGORIES.map(([r, t]) => `${REGIONS[r]}・${TYPES[t]}`), "合計", "単位"]);
+    headerRow(ws, ["JANコード", "品番", "キャラクター名", "商品名", ...CATEGORIES.map(([r, t]) => `${REGIONS[r]}・${TYPES[t]}`), "合計", "単位"]);
     for (const [p, ...qtys] of productTotals(state, filters.q, !filters.includeZero)) {
-      ws.addRow([p.jan, p.sku, p.name, ...qtys, p.unit]);
+      ws.addRow([p.jan, p.sku, p.character, p.name, ...qtys, p.unit]);
     }
   }
   ws.getColumn(1).numFmt = "@";
   ws.getColumn(1).width = 16;
-  ws.getColumn(3).width = 36;
+  ws.getColumn(4).width = 36;
   return wb;
 }
 
@@ -194,20 +197,20 @@ export async function storeExportWorkbook(state, location, filters) {
   const wb = await workbook();
   const ws = wb.addWorksheet(location.name.slice(0, 31).replace(/[\\/?*[\]:]/g, " "));
   const dates = rep.delivery_dates;
-  headerRow(ws, ["ブランド", "商品名", "JANコード", "上代（税込）", ...dates.map((d) => `${d.slice(2).replace(/-/g, "/")} 納品`),
+  headerRow(ws, ["ブランド", "キャラクター名", "商品名", "JANコード", "上代（税込）", ...dates.map((d) => `${d.slice(2).replace(/-/g, "/")} 納品`),
     "納品数 合計", "販売数", "在庫更新差分", "在庫数", "消化率（販売÷(販売+在庫)）", "販売金額（上代）", "在庫金額（上代）"]);
   for (const r of rep.rows) {
-    ws.addRow([r.product.brand, r.product.name, r.product.jan, r.product.price, ...dates.map((d) => r.deliveries[d] || null),
+    ws.addRow([r.product.brand, r.product.character, r.product.name, r.product.jan, r.product.price, ...dates.map((d) => r.deliveries[d] || null),
       r.delivered, r.sold, r.adjusted || null, r.stock, r.sell_through, r.sales_amount, r.stock_amount]);
   }
-  const n = 4 + dates.length + 7;
-  ws.getColumn(3).numFmt = "@";
-  ws.getColumn(4).numFmt = "#,##0";
+  const n = 5 + dates.length + 7;
+  ws.getColumn(4).numFmt = "@";
+  ws.getColumn(5).numFmt = "#,##0";
   ws.getColumn(n - 2).numFmt = "0.0%";
   ws.getColumn(n - 1).numFmt = "#,##0";
   ws.getColumn(n).numFmt = "#,##0";
-  [18, 40, 16, 12].forEach((w, i) => (ws.getColumn(i + 1).width = w));
-  ws.views = [{ state: "frozen", xSplit: 2, ySplit: 1 }];
+  [18, 16, 40, 16, 12].forEach((w, i) => (ws.getColumn(i + 1).width = w));
+  ws.views = [{ state: "frozen", xSplit: 3, ySplit: 1 }];
   return wb;
 }
 
@@ -215,8 +218,8 @@ export async function storeExportWorkbook(state, location, filters) {
 export async function backupWorkbook(state) {
   const wb = await workbook();
   const p = wb.addWorksheet("商品マスタ");
-  headerRow(p, ["JANコード", "商品名", "ブランド", "上代（税込）", "品番", "単位", "備考"]);
-  for (const x of [...state.products.values()]) p.addRow([x.jan, x.name, x.brand, x.price, x.sku, x.unit, x.note]);
+  headerRow(p, ["JANコード", "商品名", "キャラクター名", "ブランド", "上代（税込）", "品番", "単位", "備考"]);
+  for (const x of sortedProducts(state)) p.addRow([x.jan, x.name, x.character, x.brand, x.price, x.sku, x.unit, x.note]);
   p.getColumn(1).numFmt = "@";
   const l = wb.addWorksheet("拠点");
   headerRow(l, ["拠点", "地域", "種別", "備考"]);

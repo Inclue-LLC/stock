@@ -16,6 +16,7 @@ export function render(ctx) {
   const items = sortedProducts(ctx.state).filter((p) => matches(p, q));
   const page = paginate(items, Number(ctx.q("page")) || 1, 50);
   const brands = [...new Set([...ctx.state.products.values()].map((p) => p.brand).filter(Boolean))].sort();
+  const characters = [...new Set([...ctx.state.products.values()].map((p) => p.character).filter(Boolean))].sort();
   return {
     title: "商品マスタ",
     sub: "商品はJANコードで管理します（JANのない商品は商品名で管理）",
@@ -31,21 +32,23 @@ export function render(ctx) {
           </div>
           <label class="field"><span>商品名</span><input name="name" required></label>
           <div class="row">
+            <label class="field"><span>キャラクター名</span><input name="character" list="characters"></label>
             <label class="field"><span>ブランド</span><input name="brand" list="brands"></label>
-            <label class="field"><span>上代（税込）</span><input name="price" inputmode="numeric" placeholder="1650"></label>
           </div>
           <div class="row">
+            <label class="field"><span>上代（税込）</span><input name="price" inputmode="numeric" placeholder="1650"></label>
             <label class="field"><span>単位</span><input name="unit" value="個"></label>
-            <label class="field"><span>備考</span><input name="note"></label>
           </div>
+          <label class="field"><span>備考</span><input name="note"></label>
           <datalist id="brands">${brands.map((b) => html`<option value="${b}">`)}</datalist>
+          <datalist id="characters">${characters.map((c) => html`<option value="${c}">`)}</datalist>
           <div><button>${icon("plus")}登録する</button></div>
         </form>
       </section>
       <section class="card">
         <div class="card-head"><h2>Excel / CSV で一括登録</h2><a href="#" data-click="template">${icon("download")} テンプレート</a></div>
         <form data-action="import" class="card-body form">
-          ${dropzone("ファイルを選択、またはドラッグ＆ドロップ", ".xlsx / .csv ・「JANコード」「商品名」の列が必要（ブランド・上代・品番などは任意）", ".xlsx,.xlsm,.csv")}
+          ${dropzone("ファイルを選択、またはドラッグ＆ドロップ", ".xlsx / .csv ・「JANコード」「商品名」の列が必要（キャラクター名・ブランド・上代・品番などは任意）", ".xlsx,.xlsm,.csv")}
           <p class="hint" style="margin:0">同じJANコードの商品があれば、空欄以外の項目を上書きします。</p>
           <div><button>${icon("upload")}取り込む</button></div>
         </form>
@@ -53,14 +56,15 @@ export function render(ctx) {
     </div>
     <section class="card">
       <form class="toolbar" data-action="search" data-search>
-        <label class="search grow">${icon("search")}<input type="search" name="q" value="${q}" placeholder="JANコード・品番・商品名で検索"></label>
+        <label class="search grow">${icon("search")}<input type="search" name="q" value="${q}" placeholder="JANコード・品番・商品名・キャラクター名で検索"></label>
         <button class="ghost">検索</button>
       </form>
       ${page.items.length ? html`<div class="table-wrap"><table>
-        <thead><tr><th>商品名</th><th>ブランド</th><th>JANコード</th><th>品番</th><th class="r">上代</th><th class="r">総在庫</th></tr></thead>
+        <thead><tr><th>キャラクター</th><th>商品名</th><th>ブランド</th><th>JANコード</th><th>品番</th><th class="r">上代</th><th class="r">総在庫</th></tr></thead>
         <tbody>${page.items.map((p) => {
           const total = productTotal(ctx.state, p.id);
           return html`<tr>
+            <td>${p.character}</td>
             <td class="name"><a href="#/products/${p.id}">${p.name}</a></td><td>${p.brand}</td>
             <td class="mono">${p.jan || ""}${p.jan ? "" : html`<span class="chip k">JANなし</span>`}</td><td>${p.sku}</td>
             <td class="r">${p.price == null ? "" : n(p.price)}</td>
@@ -78,7 +82,7 @@ export function productFields(form) {
   const [jan, err] = s("jan") ? tryNormalize(s("jan")) : [null, null];
   if (err) throw new StockError(err);
   if (!s("name")) throw new StockError("商品名を入力してください");
-  return { jan, name: s("name"), sku: s("sku"), brand: s("brand"), price: s("price") ? parseQuantity(s("price")) : null,
+  return { jan, name: s("name"), sku: s("sku"), brand: s("brand"), character: s("character"), price: s("price") ? parseQuantity(s("price")) : null,
     unit: s("unit") || "個", note: String(f.get("note") || "") };
 }
 
