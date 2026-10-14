@@ -1,4 +1,5 @@
 import { go } from "../app.js";
+import { download, planExportWorkbook } from "../xlsxWrite.js";
 import { completePlan, deletePlan, savePlan } from "../db.js";
 import { StockError, sortedLocations, todayJst } from "../domain/inventory.js";
 import { PLAN_STATUS, planQuantity, planTitle, resolveLine } from "../domain/plans.js";
@@ -20,7 +21,8 @@ export function render(ctx) {
   return {
     title: planTitle(ctx.state, plan),
     sub: html`<span class="chip k">${PLAN_STATUS[plan.status]}</span>${plan.applied ? html`　<span class="chip s-applied">在庫反映済</span>` : ""}`,
-    actions: html`<a class="btn ghost" href="#/plans">納品予定の一覧へ</a>`,
+    actions: html`<button class="ghost" data-click="export">${icon("download")}Excel出力</button>
+      <a class="btn ghost" href="#/plans">納品予定の一覧へ</a>`,
     body: html`
     ${showComplete ? html`<section class="card ${ctx.q("complete") === "1" ? "highlight" : ""}" id="complete">
       <div class="card-head"><h2>完了にする</h2></div>
@@ -80,6 +82,11 @@ function readForm(form) {
 }
 
 export const actions = {
+  async export(ctx) {
+    const plan = ctx.state.plans.get(ctx.args[0]);
+    if (!plan) throw new StockError("納品予定が見つかりません");
+    await download(await planExportWorkbook(ctx.state, [plan]), "delivery_plan.xlsx");
+  },
   async save(ctx, form) {
     const base = ctx.state.plans.get(ctx.args[0]);
     if (!base) throw new StockError("納品予定が見つかりません");

@@ -350,6 +350,20 @@ describe("キャラクター名", () => {
     expect(planTitle(st, { location_id: "gone", title: "削除された店" })).toBe("削除された店");
   });
 
+  it("納品予定の商品一覧の Excel: 納品先付きで、そのまま取り込み直せる", async () => {
+    const { planExportWorkbook } = await import("../src/xlsxWrite.js");
+    const { plansFromRows } = await import("../src/domain/plans.js");
+    const st = seeded();
+    const data = await xlsx([["JANコード", "キャラクター名", "商品名", "数量", "拠点"], [JAN_A, "パム", "", 3, "大阪委託店"], [JAN_A, "", "", 2, "北京委託店"]]);
+    const { plans } = plansFromRows(st, (await parseStockFile("p.xlsx", data)).rows);
+    const wb = await planExportWorkbook(st, plans);
+    const ws = wb.getWorksheet("納品予定");
+    expect(ws.getRow(1).values.slice(1, 6)).toEqual(["納品先", "JANコード", "キャラクター名", "商品名", "数量"]);
+    expect(ws.getRow(2).values.slice(1, 6)).toEqual(["大阪委託店", JAN_A, "パム", "商品A", 3]);
+    const again = plansFromRows(st, (await parseStockFile("e.xlsx", Buffer.from(await wb.xlsx.writeBuffer()))).rows);
+    expect(again.plans.map((p) => [p.title, p.lines[0].quantity])).toEqual([["大阪委託店", 3], ["北京委託店", 2]]);
+  });
+
   it("出力する Excel に品番・単位の列はない", async () => {
     const { stockExportWorkbook, backupWorkbook } = await import("../src/xlsxWrite.js");
     const st = seeded();

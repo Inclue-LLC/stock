@@ -4,7 +4,7 @@ import { parseStockFile } from "../domain/files.js";
 import { StockError, sortedLocations } from "../domain/inventory.js";
 import { planQuantity, planTitle, plansFromRows, renameLines, sortPlans } from "../domain/plans.js";
 import { dropzone, empty, html, icon, locationOptions, n } from "../ui.js";
-import { download, planImportWorkbook } from "../xlsxWrite.js";
+import { download, planExportWorkbook, planImportWorkbook } from "../xlsxWrite.js";
 
 const COLUMNS = [["todo", "予定"], ["done", "完了"]];
 const DONE_LIMIT = 30; // 完了の列は新しい順にこの件数まで
@@ -61,6 +61,7 @@ export function render(ctx) {
   const locs = sortedLocations(ctx.state);
   return {
     title: "納品予定",
+    actions: html`<button class="ghost" data-click="export" title="「予定」の納品予定の商品一覧を、納品先付きで Excel に出力します">${icon("download")}Excel出力（予定の商品一覧）</button>`,
     sub: "これから納品する予定を「予定」→「完了」で管理します。完了時に在庫へ反映できます",
     body: html`
     ${pending ? confirmCard(pending) : html`<section class="card">
@@ -108,6 +109,13 @@ async function create(ctx, { plans, errors, lines }, renames = []) {
 }
 
 export const actions = {
+  async export(ctx) {
+    const locationId = ctx.q("location_id");
+    const plans = sortPlans([...(ctx.state.plans?.values() || [])].filter((p) => p.status === "todo"
+      && (!locationId || p.location_id === locationId || p.source_id === locationId)));
+    if (!plans.length) throw new StockError("「予定」の納品予定がありません");
+    await download(await planExportWorkbook(ctx.state, plans), "delivery_plans.xlsx");
+  },
   async confirmImport(ctx, form) {
     if (!pending) return;
     const f = new FormData(form);
