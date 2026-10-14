@@ -1,0 +1,237 @@
+// ダウンロード用の Excel（テンプレート・出力）を作る。ExcelJS は大きいので必要なときだけ読み込む。
+
+import { CATEGORIES, REGIONS, TYPES, productTotals, stockRows, storeReport } from "./domain/inventory.js";
+
+const FONT = "Meiryo UI";
+const fill = (argb) => ({ type: "pattern", pattern: "solid", fgColor: { argb } });
+const HEADER = fill("FF1F4E9E");
+const REQUIRED = fill("FFC0392B");
+const AUTO = fill("FF7F8C8D");
+const ERROR = fill("FFF8D7DA");
+const thin = { style: "thin", color: { argb: "FFD0D5DD" } };
+const BORDER = { top: thin, left: thin, bottom: thin, right: thin };
+const UNITS = ["個", "本", "枚", "箱", "袋", "セット", "ケース", "kg", "g", "L", "ml"];
+
+async function workbook() {
+  const mod = await import("exceljs");
+  const ExcelJS = mod.default || mod;
+  return new ExcelJS.Workbook();
+}
+
+export async function download(wb, filename) {
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+function header(ws, columns, fills) {
+  const row = ws.getRow(1);
+  columns.forEach(([title, width], i) => {
+    const c = row.getCell(i + 1);
+    c.value = title;
+    c.font = { name: FONT, bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
+    c.fill = fills[i];
+    c.alignment = { horizontal: "center", vertical: "middle" };
+    c.border = BORDER;
+    ws.getColumn(i + 1).width = width;
+  });
+  row.height = 26;
+  ws.views = [{ state: "frozen", ySplit: 1 }];
+}
+
+/** JAN（8/13桁）の桁数・チェックデジット・重複を判定する数式。 */
+function janCheckFormula(c, rng) {
+  const cd13 = `MOD(10-MOD(SUMPRODUCT(MID(${c},{1,3,5,7,9,11},1)*1)+3*SUMPRODUCT(MID(${c},{2,4,6,8,10,12},1)*1),10),10)`;
+  const cd8 = `MOD(10-MOD(3*SUMPRODUCT(MID(${c},{1,3,5,7},1)*1)+SUMPRODUCT(MID(${c},{2,4,6},1)*1),10),10)`;
+  // COUNTIF は "4901..." を数値扱いして文字列セルと一致しないため、SUMPRODUCT で文字列比較する
+  return `IF(${c}="","",IF(SUMPRODUCT(--(${rng}=${c}))>1,"JAN重複",`
+    + `IFERROR(IF(LEN(${c})=13,IF(${cd13}=RIGHT(${c},1)*1,"OK","チェックデジット誤り"),`
+    + `IF(LEN(${c})=8,IF(${cd8}=RIGHT(${c},1)*1,"OK","チェックデジット誤り"),"桁数エラー")),"数字以外を含む")))`;
+}
+
+export async function productMasterWorkbook(rows = 3000) {
+  const wb = await workbook();
+  const ws = wb.addWorksheet("商品マスタ");
+  header(ws, [["JANコード", 18], ["商品名", 40], ["ブランド", 20], ["上代（税込）", 13], ["品番", 16], ["単位", 9],
+    ["備考", 30], ["JANチェック（自動）", 20]], [REQUIRED, REQUIRED, HEADER, HEADER, HEADER, HEADER, HEADER, AUTO]);
+  const last = rows + 1;
+  for (let r = 2; r <= last; r++) {
+    const row = ws.getRow(r);
+    for (let c = 1; c <= 8; c++) {
+      row.getCell(c).font = { name: FONT, size: 11 };
+      row.getCell(c).border = BORDER;
+    }
+    row.getCell(1).numFmt = "@"; // JAN を文字列で保持（指数表記・先頭0落ち防止）
+    row.getCell(4).numFmt = "#,##0";
+    row.getCell(5).numFmt = "@";
+    const chk = row.getCell(8);
+    chk.value = { formula: janCheckFormula(`A${r}`, `$A$2:$A$${last}`) };
+    chk.font = { name: FONT, size: 10, color: { argb: "FF595959" } };
+    chk.alignment = { horizontal: "center" };
+  }
+  ws.autoFilter = `A1:H${last}`;
+  ws.dataValidations.add(`A2:A${last}`, {
+    type: "custom", formulae: ["OR(LEN(A2)=8,LEN(A2)=13)"], allowBlank: true, errorStyle: "warning",
+    showErrorMessage: true, errorTitle: "JANコード", error: "JANコードは8桁または13桁の数字で入力してください。",
+    showInputMessage: true, promptTitle: "JANコード", prompt: "8桁または13桁。先頭の0もそのまま入力できます。",
+  });
+  ws.dataValidations.add(`F2:F${last}`, { type: "list", formulae: [`"${UNITS.join(",")}"`], allowBlank: true,
+    showErrorMessage: false });
+  ws.dataValidations.add(`D2:D${last}`, { type: "whole", operator: "greaterThanOrEqual", formulae: [0], allowBlank: true,
+    errorStyle: "warning", showErrorMessage: true, errorTitle: "上代", error: "上代は税込の金額（整数）で入力してください。" });
+  ws.addConditionalFormatting({ ref: `A2:A${last}`, rules: [{ type: "expression", formulae: ['AND(A2<>"",H2<>"OK")'],
+    style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFF8D7DA" } } } }] });
+  ws.addConditionalFormatting({ ref: `H2:H${last}`, rules: [{ type: "expression", formulae: ['AND(H2<>"",H2<>"OK")'],
+    style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFF8D7DA" } },
+      font: { color: { argb: "FFC0392B" }, bold: true } } }] });
+  productGuide(wb.addWorksheet("記入方法", { views: [{ showGridLines: false }] }));
+  return wb;
+}
+
+function productGuide(ws) {
+  [3, 20, 10, 26, 64].forEach((w, i) => (ws.getColumn(i + 1).width = w));
+  ws.getCell("B2").value = "商品マスタの記入方法";
+  ws.getCell("B2").font = { name: FONT, size: 16, bold: true };
+  const notes = [
+    "「商品マスタ」シートの2行目から、1行に1商品ずつ入力してください。",
+    "赤い見出しの列（JANコード・商品名）は必須です。青い見出しの列（ブランド・上代など）は任意です。",
+    "JAN のない商品は、JANコードを空欄にして商品名だけで登録できます。",
+    "灰色の「JANチェック（自動）」列は自動で判定します。「OK」以外が出た行は JAN を見直してください。",
+    "JAN の重複・桁数・チェックデジットに問題がある行は、JAN のセルが赤くなります。",
+    "入力後、在庫管理システムの「商品マスタ」→「Excel / CSV で一括登録」からこのファイルを取り込みます。",
+    "すでに登録済みの JAN は、入力した項目で上書きされます（空欄の項目は変更されません）。",
+  ];
+  notes.forEach((t, i) => {
+    const c = ws.getCell(4 + i, 2);
+    c.value = `・${t}`;
+    c.font = { name: FONT, size: 11 };
+  });
+  const top = 4 + notes.length + 1;
+  ["項目", "必須", "記入例", "説明"].forEach((h, i) => {
+    const c = ws.getCell(top, 2 + i);
+    c.value = h;
+    c.font = { name: FONT, bold: true, color: { argb: "FFFFFFFF" } };
+    c.fill = HEADER;
+    c.border = BORDER;
+  });
+  const items = [
+    ["JANコード", "必須", "4580703202780", "8桁または13桁の数字。セルは文字列形式なので、先頭の0や13桁もそのまま入力できます。"],
+    ["商品名", "必須", "むぎゅっとカードホルダー", "画面や帳票に表示される名前。"],
+    ["ブランド", "", "Lovely MongMong", "店舗別画面でブランドごとにまとめて表示します。"],
+    ["上代（税込）", "", "1650", "税込の販売価格（円）。販売金額・在庫金額の計算に使います。"],
+    ["品番", "", "SK-001", "社内の品番・型番など。JAN の代わりに品番で取込することもできます。"],
+    ["単位", "", "個", "リストから選択（個・本・箱・セット など）。リストにない単位も入力できます。空欄なら「個」。"],
+    ["備考", "", "", "自由記入。"],
+  ];
+  items.forEach((row, r) => {
+    row.forEach((v, i) => {
+      const c = ws.getCell(top + 1 + r, 2 + i);
+      c.value = v;
+      c.font = { name: FONT, size: 11, color: { argb: v === "必須" ? "FFC0392B" : "FF000000" } };
+      c.border = BORDER;
+      c.alignment = { vertical: "middle", wrapText: true };
+      if (i === 2) c.numFmt = "@";
+    });
+    ws.getRow(top + 1 + r).height = 34;
+  });
+}
+
+export async function stockImportWorkbook(rows = 1000) {
+  const wb = await workbook();
+  const ws = wb.addWorksheet("在庫取込");
+  header(ws, [["JANコード", 18], ["商品名", 36], ["数量", 10], ["拠点", 20], ["備考", 40]],
+    [REQUIRED, HEADER, REQUIRED, HEADER, HEADER]);
+  for (let r = 2; r <= rows + 1; r++) {
+    const row = ws.getRow(r);
+    for (let c = 1; c <= 5; c++) {
+      row.getCell(c).font = { name: FONT, size: 11 };
+      row.getCell(c).border = BORDER;
+    }
+    row.getCell(1).numFmt = "@";
+    row.getCell(3).numFmt = "#,##0";
+  }
+  return wb;
+}
+
+function headerRow(ws, titles) {
+  ws.addRow(titles);
+  ws.getRow(1).eachCell((c) => {
+    c.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    c.fill = HEADER;
+  });
+  ws.views = [{ state: "frozen", ySplit: 1 }];
+}
+
+export async function stockExportWorkbook(state, view, filters) {
+  const wb = await workbook();
+  const ws = wb.addWorksheet("在庫");
+  if (view === "location") {
+    headerRow(ws, ["JANコード", "品番", "商品名", "地域", "種別", "拠点", "数量", "単位"]);
+    for (const s of stockRows(state, filters)) {
+      ws.addRow([s.product.jan, s.product.sku, s.product.name, REGIONS[s.location.region], TYPES[s.location.type],
+        s.location.name, s.q, s.product.unit]);
+    }
+  } else {
+    headerRow(ws, ["JANコード", "品番", "商品名", ...CATEGORIES.map(([r, t]) => `${REGIONS[r]}・${TYPES[t]}`), "合計", "単位"]);
+    for (const [p, ...qtys] of productTotals(state, filters.q, !filters.includeZero)) {
+      ws.addRow([p.jan, p.sku, p.name, ...qtys, p.unit]);
+    }
+  }
+  ws.getColumn(1).numFmt = "@";
+  ws.getColumn(1).width = 16;
+  ws.getColumn(3).width = 36;
+  return wb;
+}
+
+export async function storeExportWorkbook(state, location, filters) {
+  const rep = storeReport(state, location.id, filters);
+  const wb = await workbook();
+  const ws = wb.addWorksheet(location.name.slice(0, 31).replace(/[\\/?*[\]:]/g, " "));
+  const dates = rep.delivery_dates;
+  headerRow(ws, ["ブランド", "商品名", "JANコード", "上代（税込）", ...dates.map((d) => `${d.slice(2).replace(/-/g, "/")} 納品`),
+    "納品数 合計", "販売数", "在庫更新差分", "在庫数", "消化率（販売÷(販売+在庫)）", "販売金額（上代）", "在庫金額（上代）"]);
+  for (const r of rep.rows) {
+    ws.addRow([r.product.brand, r.product.name, r.product.jan, r.product.price, ...dates.map((d) => r.deliveries[d] || null),
+      r.delivered, r.sold, r.adjusted || null, r.stock, r.sell_through, r.sales_amount, r.stock_amount]);
+  }
+  const n = 4 + dates.length + 7;
+  ws.getColumn(3).numFmt = "@";
+  ws.getColumn(4).numFmt = "#,##0";
+  ws.getColumn(n - 2).numFmt = "0.0%";
+  ws.getColumn(n - 1).numFmt = "#,##0";
+  ws.getColumn(n).numFmt = "#,##0";
+  [18, 40, 16, 12].forEach((w, i) => (ws.getColumn(i + 1).width = w));
+  ws.views = [{ state: "frozen", xSplit: 2, ySplit: 1 }];
+  return wb;
+}
+
+/** 全データのバックアップ（商品・拠点・在庫）。 */
+export async function backupWorkbook(state) {
+  const wb = await workbook();
+  const p = wb.addWorksheet("商品マスタ");
+  headerRow(p, ["JANコード", "商品名", "ブランド", "上代（税込）", "品番", "単位", "備考"]);
+  for (const x of [...state.products.values()]) p.addRow([x.jan, x.name, x.brand, x.price, x.sku, x.unit, x.note]);
+  p.getColumn(1).numFmt = "@";
+  const l = wb.addWorksheet("拠点");
+  headerRow(l, ["拠点", "地域", "種別", "備考"]);
+  for (const x of state.locations.values()) l.addRow([x.name, REGIONS[x.region], TYPES[x.type], x.note]);
+  const s = wb.addWorksheet("在庫");
+  headerRow(s, ["拠点", "JANコード", "商品名", "在庫数", "納品累計", "販売累計", "調整累計", "納品日別"]);
+  for (const [lid, items] of state.stocks) {
+    for (const [pid, e] of items) {
+      const loc = state.locations.get(lid);
+      const prod = state.products.get(pid);
+      if (!loc || !prod) continue;
+      s.addRow([loc.name, prod.jan, prod.name, e.q, e.del, e.sold, e.adj,
+        Object.entries(e.dels).map(([d, q]) => `${d}:${q}`).join(" ")]);
+    }
+  }
+  s.getColumn(2).numFmt = "@";
+  return wb;
+}

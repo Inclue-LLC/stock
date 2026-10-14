@@ -1,6 +1,6 @@
 # 在庫管理システム
 
-日本・中国の **倉庫** と **委託店舗** の在庫を一元管理する Web アプリです（Firebase / Cloud Run で公開）。
+日本・中国の **倉庫** と **委託店舗** の在庫を一元管理する Web アプリです（Firebase の無料プランで公開）。
 商品は **JANコード** で管理し、各拠点の在庫は **Excel / CSV / PDF のアップロード** でいつでも更新できます。
 委託店舗ごとに、納品（日付別）・販売・在庫・消化率・上代ベースの金額を一覧で確認できます。
 
@@ -50,6 +50,7 @@ JAN の列は文字列形式になっていて、桁数・チェックデジッ�
   - ブランド・上代（任意）: `ブランド` `上代（税込）` `売価` `定価` — 商品マスタが空欄なら補完します
   - 拠点（任意）: `拠点` `倉庫` `店舗` `委託先` `仓库` `门店`
   - 単位・備考（任意）
+- 商品名だけの行（JAN・品番なし）は、JAN なし商品として商品名で照合します。
 - 「拠点」列が空の行には、アップロード時に選んだ拠点を使います。
 - 未登録の JAN は、商品名があれば反映時に自動で商品登録されます。
 - 「合計」「小計」の行は無視します。
@@ -60,48 +61,54 @@ JAN の列は文字列形式になっていて、桁数・チェックデジッ�
 ## 構成
 
 ```
-ブラウザ ── Firebase Hosting（https://<プロジェクトID>.web.app）
-              └─ Cloud Run（このアプリ。東京リージョン、最大1インスタンス）
-                    └─ Firestore（データ）
+ブラウザ（画面・ファイル読み取り・Excel 出力をすべてブラウザで実行）
+   └─ Firebase Hosting（https://<プロジェクトID>.web.app） … 画面のファイルを配信
+   └─ Firestore … データ
 ```
 
-- データは Firestore に保存します。ブラウザから Firestore への直接アクセスはルールで拒否し、読み書きはサーバー経由だけです。
-- 拠点・商品・在庫（店舗別明細の累計を含む）はサーバーのメモリにも持ち、画面表示では Firestore を読みません。
-  そのため **Cloud Run の最大インスタンス数は 1 にしてください**（deploy.sh で設定済み）。
-- ログインはありません。URL を知っている人は誰でも閲覧・更新できます。検索エンジンには載らない設定（noindex）にしています。
+- Firebase の **無料プラン（Spark）** で動きます。サーバー（Cloud Run / Cloud Functions）は使いません。
+- 読み取りを減らすため、商品・拠点は1件の文書に、在庫は拠点ごとに1件の文書にまとめて保存します。
+  画面を開いたときの読み取りは「1 ＋ 拠点数」件で、無料枠（1日5万回）に十分収まります。
+- 変更はすべてトランザクションで行い、複数の人が同時に更新しても在庫数がずれません。
+- **ログインはありません。** URL を知っている人、または Firebase のプロジェクトID を知っている人は、誰でもデータを読み書きできます。
+  `firestore.rules` で、決まった形以外のデータの書き込み・データの削除・入出庫履歴の書き換えは禁止しています。
+  「商品マスタ」画面の「全データのバックアップ」で、定期的に Excel に保存してください。
+
+| Firestore | 内容 |
+| --- | --- |
+| `meta/catalog` | 商品マスタ・拠点（1件） |
+| `stocks/{拠点ID}` | 拠点ごとの在庫と、納品（日付別）・販売・調整の累計 |
+| `imports/{ID}` | アップロードしたファイルの内容と状態（確認 → 反映 / 取消） |
+| `history/{ID}` | 入出庫履歴（追記のみ） |
 
 ```
-app/
-  main.py           画面・ルーティング（FastAPI）
-  models.py         データの型
-  store.py          Firestore への保存とメモリキャッシュ
-  services.py       在庫の増減・取込反映・商品マスタ取込・店舗別明細
-  oz_import.py      OZ 納品数集計 Excel の一括取込（初期データ）
-  jan.py            JANコードの正規化とチェックデジット検証
-  importers.py      Excel / CSV / PDF の読み取り
-  xlsx_templates.py ダウンロード用 Excel テンプレート
-  templates/ static/
-scripts/deploy.sh   デプロイ
-firebase.json       Hosting → Cloud Run の転送、Firestore ルール
-Dockerfile
+src/
+  main.js / app.js     起動・画面の切り替え・共通レイアウト
+  firebase.js / db.js  Firestore への接続と保存
+  domain/              在庫の計算・JAN・ファイル読み取り・OZ 初期データ取込（画面に依存しない）
+  pages/               各画面
+  xlsxWrite.js         Excel テンプレート・出力
+test/                  テスト（domain の単体テスト、Firestore エミュレータでの結合テスト）
+firestore.rules        Firestore のセキュリティルール
 ```
 
 ## 公開（デプロイ）
 
-### 1. Firebase コンソールでの準備（最初だけ）
+### 1. Firebase コンソールでの準備（最初の1回だけ）
 
-1. Firebase コンソールでプロジェクトを開き、料金プランを **Blaze（従量課金）** にします（Cloud Run に必要）。
-   この規模なら無料枠に収まり、通常は月0円です。念のため「予算アラート」（例：月1,000円）を設定してください。
-2. Firestore は deploy.sh が東京リージョンに作成します（すでにあればそのまま使います）。
+1. **Firestore を作成**: 「構築」→「Firestore Database」→「データベースを作成」→ ロケーション **asia-northeast1（東京）** →「本番環境モード」で作成。
+2. **ウェブアプリを登録**: 歯車 →「プロジェクトの設定」→「マイアプリ」→ `</>`（ウェブ）→ ニックネーム（例：stock）を入れて登録。
+   （設定値をコードに貼る必要はありません。Hosting が自動で読み込みます）
+3. 同じ画面の **プロジェクト ID** を控えます。
 
-### 2. デプロイ
+### 2. デプロイ（Mac）
 
-Mac に [Google Cloud CLI](https://cloud.google.com/sdk/docs/install) と Firebase CLI（`npm install -g firebase-tools`）を入れてから:
+[Node.js](https://nodejs.org/)（LTS）を入れてから、stock フォルダで:
 
 ```bash
-gcloud auth login
-firebase login
-scripts/deploy.sh <プロジェクトID>
+npm install
+npx firebase login
+npm run deploy -- --project <プロジェクトID>
 ```
 
 完了すると `https://<プロジェクトID>.web.app` で使えます。コードを更新したときも同じコマンドで反映できます。
@@ -111,19 +118,13 @@ scripts/deploy.sh <プロジェクトID>
 公開した画面の「在庫の更新」→ 下部の「初期データの取り込み」から、OZ 納品数集計の Excel をアップロードします。
 「確認する」で件数を確かめてから「取り込む」を押してください（二重取込は自動で防ぎます）。
 
-## 開発（ローカル）
+## 開発
 
 Firestore エミュレータ（Java が必要）を使います。
 
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install -r requirements-dev.txt
-npx firebase-tools emulators:start --only firestore      # 別のターミナルで起動したまま
-FIRESTORE_EMULATOR_HOST=127.0.0.1:8081 GOOGLE_CLOUD_PROJECT=demo-stock .venv/bin/uvicorn app.main:app --port 8000
-```
-
-テスト（エミュレータを自動で起動します。初回のみ `npx firebase-tools setup:emulators:firestore`）:
-
-```bash
-.venv/bin/pytest
+npm install
+npx firebase setup:emulators:firestore   # 初回のみ
+npm run dev        # エミュレータ ＋ 開発サーバー（http://localhost:5173）
+npm test           # テスト（エミュレータを起動して実行）
 ```

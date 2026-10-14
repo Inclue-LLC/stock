@@ -1,9 +1,48 @@
 rules_version = '2';
-// データの読み書きはサーバー（Cloud Run）からのみ行う。ブラウザからの直接アクセスはすべて拒否する。
+
+// ログインなしで使う前提のルール。
+// - 読み取りは誰でも可能（URL を知っている人がブラウザから使うため）
+// - 書き込みは決まった形のデータだけ許可し、削除・履歴の書き換えはできないようにする
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if false;
+
+    // 商品マスタ・拠点（1件）。決まった項目だけを持つ更新を許可し、削除はできない
+    match /meta/catalog {
+      allow read: if true;
+      allow create, update: if request.resource.data.keys().hasOnly(['products', 'locations', 'version', 'updated_at'])
+        && request.resource.data.products is map && request.resource.data.locations is map
+        && request.resource.data.version is int;
+      allow delete: if false;
+    }
+
+    // 拠点ごとの在庫。存在する拠点のものだけ。削除は拠点を消したときだけ
+    match /stocks/{locationId} {
+      allow read: if true;
+      allow create, update: if request.resource.data.keys().hasOnly(['items', 'updated_at'])
+        && request.resource.data.items is map
+        && locationId in getAfter(/databases/$(database)/documents/meta/catalog).data.locations;
+      allow delete: if !(locationId in getAfter(/databases/$(database)/documents/meta/catalog).data.locations);
+    }
+
+    // 取込ファイル（確認 → 反映）。反映済み・取消済みのものは変更できない
+    match /imports/{id} {
+      allow read: if true;
+      allow create: if request.resource.data.status == 'pending'
+        && request.resource.data.keys().hasOnly(['filename', 'source', 'kind', 'location_id', 'status',
+             'zero_missing', 'date', 'rows_json', 'row_count', 'warnings', 'created_at']);
+      allow update: if resource.data.status == 'pending'
+        && request.resource.data.status in ['pending', 'applied', 'cancelled']
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'location_id']);
+      allow delete: if false;
+    }
+
+    // 入出庫履歴は追記のみ（書き換え・削除はできない）
+    match /history/{id} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasOnly(['created_at', 'batch_id', 'filename', 'source', 'seq',
+          'location_ids', 'product_ids', 'movements'])
+        && request.resource.data.movements is list && request.resource.data.movements.size() <= 400;
+      allow update, delete: if false;
     }
   }
 }

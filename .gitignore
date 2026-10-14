@@ -1,7 +1,5 @@
+node_modules/
+dist/
 .venv/
-__pycache__/
-*.pyc
-.pytest_cache/
-data/
 .firebase/
 *-debug.log

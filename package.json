@@ -1,0 +1,23 @@
+{
+  "name": "stock",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "firebase emulators:exec --only firestore --project demo-stock 'VITE_EMULATOR=1 vite'",
+    "build": "vite build",
+    "test": "firebase emulators:exec --only firestore --project demo-stock 'vitest run'",
+    "test:unit": "vitest run test/domain.test.js",
+    "deploy": "vite build && firebase deploy --only hosting,firestore"
+  },
+  "dependencies": {
+    "exceljs": "4.4.0",
+    "fflate": "0.8.2",
+    "firebase": "11.10.0",
+    "pdfjs-dist": "4.10.38"
+  },
+  "devDependencies": {
+    "firebase-tools": "14.27.0",
+    "vite": "6.3.5",
+    "vitest": "3.2.4"
+  }
+}

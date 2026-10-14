@@ -1,0 +1,81 @@
+import { go } from "../app.js";
+import { applyImport, getImport, updateImport } from "../db.js";
+import { IMPORT_KIND_LABELS, SOURCES, missingStocks, sortedLocations, validateBatch } from "../domain/inventory.js";
+import { empty, html, icon, locationOptions, n } from "../ui.js";
+
+export const live = false;
+const STATUS = { pending: "未反映", applied: "反映済", cancelled: "取消" };
+
+export async function render(ctx) {
+  const batch = await getImport(ctx.args[0]);
+  if (!batch) return { title: "取込が見つかりません", body: empty("URL が正しくありません。", "#/imports", "在庫の更新へ") };
+  const preview = batch.status === "pending" ? validateBatch(ctx.state, batch) : [];
+  const missing = preview.length ? missingStocks(ctx.state, batch, preview) : [];
+  const ok = preview.filter((p) => !p.errors.length).length;
+  const newProducts = preview.filter((p) => !p.errors.length && !p.product).length;
+  const warnings = batch.warnings || [];
+  return {
+    title: "更新内容の確認",
+    sub: batch.filename,
+    body: html`
+    <section class="card"><div class="card-body"><div class="keyvals">
+      <span>反映のしかた <b>${IMPORT_KIND_LABELS[batch.kind]}</b></span>
+      <span>日付 <b>${batch.date || "–"}</b></span>
+      <span>形式 <b>${SOURCES[batch.source]}</b></span>
+      <span>行数 <b>${batch.row_count}</b></span>
+      <span>状態 <span class="chip s-${batch.status}">${STATUS[batch.status]}</span></span>
+    </div></div></section>
+    ${warnings.slice(0, 20).map((w) => html`<div class="alert warn">${icon("alert")}<span>${w}</span></div>`)}
+    ${warnings.length > 20 ? html`<div class="alert warn">ほか ${warnings.length - 20} 件の警告</div>` : ""}
+    ${batch.status === "pending" ? html`
+    <section class="card">
+      <div class="card-head"><h2>反映内容</h2>
+        <form data-action="setLocation" class="toolbar"><span class="hint">「拠点」列が空の行の拠点</span>
+          <select name="location_id" data-autosubmit>${locationOptions(sortedLocations(ctx.state), batch.location_id, "未指定")}</select></form>
+      </div>
+      ${preview.length ? html`<div class="table-wrap"><table>
+        <thead><tr><th>#</th><th>商品</th><th>JANコード</th><th>拠点</th><th class="r">数量</th><th class="r">現在</th><th class="r">反映後</th><th>確認</th></tr></thead>
+        <tbody>${preview.map((p) => html`<tr class="${p.errors.length ? "row-err" : p.product ? "" : "row-new"}">
+          <td class="muted">${p.index + 1}</td>
+          <td class="name">${p.product ? p.product.name : p.name}${p.sku ? html`<span class="sub">${p.sku}</span>` : ""}</td>
+          <td class="mono">${p.jan_code || p.jan || "JANなし"}</td>
+          <td>${p.location ? p.location.name : p.location_name || ""}</td>
+          <td class="r"><b>${p.quantity == null ? "?" : n(p.quantity)}</b></td>
+          <td class="r muted">${p.current == null ? "" : n(p.current)}</td>
+          <td class="r">${p.after == null ? "" : n(p.after)}</td>
+          <td>${p.errors.length ? html`<span class="neg">${p.errors.join(" / ")}</span>`
+            : p.product ? html`<span class="chip s-applied">OK</span>` : html`<span class="chip s-pending">新規商品</span>`}</td>
+        </tr>`)}</tbody></table></div>` : empty("読み取れた行はありません。")}
+      ${missing.length ? html`<div class="card-body" style="border-top:1px solid var(--border)"><details class="more">
+        <summary>ファイルにない商品 ${missing.length}件の在庫を0にします（クリックで一覧）</summary>
+        <ul class="steps" style="margin-top:8px">${missing.slice(0, 200).map((s) =>
+          html`<li>${s.location.name}：${s.product.name} <span class="mono muted">${s.product.jan || ""}</span>（現在 ${n(s.q)}）</li>`)}</ul>
+      </details></div>` : ""}
+      <div class="card-body actions" style="border-top:1px solid var(--border)">
+        <button class="lg" data-click="apply" ${ok ? "" : "disabled"}>${icon("check")}${ok}件を反映する${newProducts ? `（新規商品 ${newProducts}件）` : ""}${missing.length ? `・${missing.length}件を0に` : ""}</button>
+        <button class="ghost lg" data-click="cancel">取り消す</button>
+        ${ok < preview.length ? html`<span class="hint">エラーの ${preview.length - ok} 件は反映されません</span>` : ""}
+      </div>
+    </section>` : html`<section class="card"><div class="card-body actions">
+      ${batch.status === "applied" ? html`<a class="btn" href="#/movements?batch_id=${batch.id}">反映された履歴を見る</a>` : ""}
+      <a class="btn ghost" href="#/imports">在庫の更新に戻る</a></div></section>`}`,
+  };
+}
+
+export const actions = {
+  async setLocation(ctx, form) {
+    await updateImport(ctx.args[0], { location_id: new FormData(form).get("location_id") || null });
+    go(`#/imports/${ctx.args[0]}`);
+  },
+  async apply(ctx) {
+    const id = ctx.args[0];
+    const r = await applyImport(id);
+    let msg = `${r.applied}件を反映しました${r.skipped ? `（エラー ${r.skipped}件はスキップ）` : ""}`;
+    if (r.zeroed) msg += `。ファイルにない ${r.zeroed}件を0にしました`;
+    go(`#/imports/${id}`, { msg });
+  },
+  async cancel(ctx) {
+    await updateImport(ctx.args[0], { status: "cancelled" });
+    go("#/imports", { msg: "取込を取り消しました" });
+  },
+};
