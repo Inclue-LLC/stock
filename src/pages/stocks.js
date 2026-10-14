@@ -15,7 +15,7 @@ function filters(ctx) {
 
 export function render(ctx) {
   const f = filters(ctx);
-  const view = ctx.q("view") === "location" ? "location" : "product";
+  const view = ctx.q("view") === "location" ? "location" : "product"; // 拠点ごとの行表示は「拠点別」画面の明細から
   const items = view === "product" ? productTotals(ctx.state, f.q, !f.includeZero) : stockRows(ctx.state, f);
   const page = paginate(items, Number(ctx.q("page")) || 1, 100);
   const locs = sortedLocations(ctx.state);
@@ -44,10 +44,6 @@ export function render(ctx) {
     actions: html`<button class="ghost" data-click="export">${icon("download")}Excel出力</button>`,
     body: html`<section class="card">
       <form class="toolbar" data-action="search" data-search>
-        <div class="tabs">
-          <a href="${ctx.urlWith({ view: "product" })}" class="${view === "product" ? "active" : ""}">商品別</a>
-          <a href="${ctx.urlWith({ view: "location" })}" class="${view === "location" ? "active" : ""}">拠点別</a>
-        </div>
         <label class="search grow">${icon("search")}<input type="search" name="q" value="${f.q}" placeholder="JANコード・品番・商品名で検索"></label>
         ${view === "location" ? html`
           <select name="region"><option value="">すべての地域</option>
@@ -68,7 +64,7 @@ export const actions = {
     go(searchHash(ctx, form, ["view"]));
   },
   async export(ctx) {
-    const view = ctx.q("view") === "location" ? "location" : "product";
+    const view = ctx.q("view") === "location" ? "location" : "product"; // 拠点ごとの行表示は「拠点別」画面の明細から
     await download(await stockExportWorkbook(ctx.state, view, filters(ctx)), "stock.xlsx");
   },
 };

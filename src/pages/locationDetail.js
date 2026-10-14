@@ -19,7 +19,7 @@ function groupBy(rows, key) {
 
 export function render(ctx) {
   const location = ctx.state.locations.get(ctx.args[0]);
-  if (!location) return { title: "拠点が見つかりません", body: empty("この拠点は削除されたか、URL が正しくありません。", "#/locations", "拠点の一覧へ") };
+  if (!location) return { title: "拠点が見つかりません", body: empty("この拠点は削除されたか、URL が正しくありません。", "#/locations", "拠点別の一覧へ") };
   const f = filters(ctx);
   const rep = storeReport(ctx.state, location.id, f);
   const rows = rep.rows;

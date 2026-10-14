@@ -43,7 +43,7 @@ export async function render(ctx) {
       </section>
     </div>
     <section class="card">
-      <div class="card-head"><h2>取込履歴</h2></div>
+      <div class="card-head"><h2>取込履歴</h2><a href="#/movements">${icon("history")} 入出庫履歴</a></div>
       ${batches.length ? html`<div class="table-wrap"><table>
         <thead><tr><th>日時</th><th>ファイル</th><th>区分</th><th>拠点</th><th class="r">行数</th><th>状態</th></tr></thead>
         <tbody>${batches.map((b) => html`<tr>
@@ -55,7 +55,7 @@ export async function render(ctx) {
           <td><span class="chip s-${b.status}">${STATUS[b.status]}</span></td></tr>`)}</tbody></table></div>`
         : empty("取込履歴はまだありません。")}
     </section>
-    <p class="hint"><a href="#/imports/oz">初期データの取り込み（OZ 納品数集計 Excel）</a></p>`,
+    <p class="hint"><a href="#/movements">入出庫履歴を見る</a>　／　<a href="#/imports/oz">初期データの取り込み（OZ 納品数集計 Excel）</a></p>`,
   };
 }
 

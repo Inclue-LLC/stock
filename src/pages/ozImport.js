@@ -23,7 +23,7 @@ export function render(ctx) {
         ${result.warnings.length ? html`<details class="more" style="margin-top:12px" open>
           <summary>注意 ${result.warnings.length}件（JANコードの重複・誤りを自動で補正しました）</summary>
           <ul class="steps" style="margin-top:8px">${result.warnings.map((w) => html`<li>${w}</li>`)}</ul></details>` : ""}
-        ${result.saved ? html`<p style="margin-top:16px"><a class="btn" href="#/locations">拠点の画面を開く</a></p>` : ""}
+        ${result.saved ? html`<p style="margin-top:16px"><a class="btn" href="#/locations">拠点別を開く</a></p>` : ""}
       </div></section>` : ""}
     ${!result || !result.saved ? html`<section class="card">
       <form data-action="run" class="card-body form">

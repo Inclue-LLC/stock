@@ -4,6 +4,7 @@ import { StockError } from "./domain/inventory.js";
 import { esc, html, icon, raw } from "./ui.js";
 import * as stocks from "./pages/stocks.js";
 import * as locations from "./pages/locations.js";
+import * as locationMaster from "./pages/locationMaster.js";
 import * as locationDetail from "./pages/locationDetail.js";
 import * as products from "./pages/products.js";
 import * as productDetail from "./pages/productDetail.js";
@@ -15,6 +16,7 @@ import * as ozImport from "./pages/ozImport.js";
 const ROUTES = [
   [/^\/stocks$/, stocks],
   [/^\/locations$/, locations],
+  [/^\/location-master$/, locationMaster],
   [/^\/locations\/([\w-]+)$/, locationDetail],
   [/^\/products$/, products],
   [/^\/products\/([\w-]+)$/, productDetail],
@@ -24,12 +26,13 @@ const ROUTES = [
   [/^\/imports$/, imports],
 ];
 
+// [リンク先, アイコン, 名前, この項目を選択中として表示する画面]
 const NAV = [
-  ["#/stocks", "boxes", "在庫一覧"],
-  ["#/imports", "upload", "在庫の更新"],
-  ["#/movements", "history", "入出庫履歴"],
-  ["#/products", "tag", "商品マスタ"],
-  ["#/locations", "pin", "拠点"],
+  ["#/stocks", "boxes", "在庫一覧", ["/stocks"]],
+  ["#/locations", "store", "拠点別", ["/locations"]],
+  ["#/imports", "upload", "在庫の更新", ["/imports", "/movements"]],
+  ["#/products", "tag", "商品マスタ", ["/products"]],
+  ["#/location-master", "pin", "拠点マスタ", ["/location-master"]],
 ];
 
 let root = null;
@@ -74,8 +77,8 @@ export function go(hash, message = {}) {
 }
 
 function layout(route, page) {
-  const nav = NAV.map(([href, ic, label]) => {
-    const active = route.path.startsWith(href.slice(1));
+  const nav = NAV.map(([href, ic, label, paths]) => {
+    const active = paths.some((p) => route.path === p || route.path.startsWith(`${p}/`));
     return html`<a href="${href}" class="${active ? "active" : ""}">${icon(ic)}<span>${label}</span></a>`;
   });
   const f = flash.hash === location.hash ? flash : {};

@@ -283,3 +283,6 @@ table.report tfoot .stick { background: var(--surface-2); }
 @keyframes spin { to { transform: rotate(360deg); } }
 button.busy { opacity: .6; pointer-events: none; }
 .notice { font-size: 12px; color: var(--muted); padding: 12px 4px 0; }
+tr.group-row td { background: var(--accent-soft); font-size: 13px; border-top: 1px solid var(--border); }
+tbody tr.group-row:hover td { background: var(--accent-soft); }
+.card > .card-body.toolbar { padding: 16px 20px 20px; }
