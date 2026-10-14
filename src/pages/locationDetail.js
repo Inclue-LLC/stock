@@ -1,6 +1,7 @@
 import { go, searchHash } from "../app.js";
 import { locationStockRows, paginate } from "../domain/inventory.js";
-import { badge, dateTime, empty, html, icon, n, pager, stockLegend, stockQty } from "../ui.js";
+import { badge, bulkBar, dateTime, empty, html, icon, n, pager, selectCell, selectHeader, stockLegend, stockQty, wireBulk } from "../ui.js";
+import { bulkDelete } from "./bulkDelete.js";
 import { download, storeExportWorkbook } from "../xlsxWrite.js";
 
 function filters(ctx) {
@@ -26,21 +27,27 @@ export function render(ctx) {
         <button class="ghost">絞り込み</button>
         ${stockLegend()}
       </form>
-      ${page.items.length ? html`<div class="table-wrap"><table>
-        <thead><tr><th>キャラクター</th><th>商品</th><th>JANコード</th><th class="r">在庫数</th></tr></thead>
+      ${page.items.length ? html`<form data-action="bulkDelete">${bulkBar()}<div class="table-wrap"><table>
+        <thead><tr>${selectHeader()}<th>キャラクター</th><th>商品</th><th>JANコード</th><th class="r">在庫数</th></tr></thead>
         <tbody>${page.items.map(({ product: p, q }) => html`<tr>
+          ${selectCell(p)}
           <td>${p.character}</td>
           <td class="name"><a href="#/products/${p.id}">${p.name}</a>${p.sku ? html`<span class="sub">${p.sku}</span>` : ""}</td>
           <td class="mono">${p.jan || "JANなし"}</td>
           <td class="r">${stockQty(q, p.unit)}</td></tr>`)}</tbody>
-        <tfoot><tr><td colspan="3">合計 <span class="muted">${n(rows.length)}商品</span></td><td class="r">${n(total)}</td></tr></tfoot>
-      </table></div>${pager(page, ctx.urlWith)}`
+        <tfoot><tr><td></td><td colspan="3">合計 <span class="muted">${n(rows.length)}商品</span></td><td class="r">${n(total)}</td></tr></tfoot>
+      </table></div></form>${pager(page, ctx.urlWith)}`
       : empty("該当する在庫はありません。", `#/imports?location_id=${location.id}`, "ファイルから更新する")}
     </section>`,
   };
 }
 
+export function mounted(ctx, root) {
+  wireBulk(root);
+}
+
 export const actions = {
+  bulkDelete,
   search(ctx, form) {
     go(searchHash(ctx, form));
   },

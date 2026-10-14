@@ -83,6 +83,48 @@ export function stockQty(q, unit = "") {
 export const stockLegend = () =>
   html`<span class="legend"><span class="qty qty-zero">0</span> 在庫なし　<span class="qty qty-low">${LOW_STOCK}</span> ${LOW_STOCK}個以下</span>`;
 
+// ---- まとめて削除（チェックボックス） ----------------------------------------------
+
+/** 一覧の上に出す「選択中の件数・削除ボタン」。表全体を <form data-action="bulkDelete"> で囲んで使う。 */
+export const bulkBar = () => html`<div class="bulkbar">
+  <label class="check"><input type="checkbox" data-select-all> すべて選択</label>
+  <span class="muted" data-selected-count>0件選択中</span>
+  <button class="danger sm" data-bulk-delete disabled>選択した商品を削除</button>
+</div>`;
+
+export const selectHeader = () => html`<th class="sel"></th>`;
+export const selectCell = (product) =>
+  html`<td class="sel"><input type="checkbox" name="pid" value="${product.id}" aria-label="${product.name}を選択"></td>`;
+
+/** チェックボックスの「すべて選択」と件数表示をつなぐ（画面の mounted から呼ぶ）。 */
+export function wireBulk(root) {
+  const form = root.querySelector('form[data-action="bulkDelete"]');
+  if (!form) return;
+  const boxes = () => [...form.querySelectorAll('input[name="pid"]')];
+  const all = form.querySelector("[data-select-all]");
+  const update = () => {
+    const checked = boxes().filter((b) => b.checked).length;
+    form.querySelector("[data-selected-count]").textContent = `${checked}件選択中`;
+    form.querySelector("[data-bulk-delete]").disabled = checked === 0;
+    all.checked = checked > 0 && checked === boxes().length;
+    all.indeterminate = checked > 0 && checked < boxes().length;
+    for (const b of boxes()) b.closest("tr").classList.toggle("selected", b.checked);
+  };
+  all.addEventListener("change", () => {
+    for (const b of boxes()) b.checked = all.checked;
+    update();
+  });
+  form.addEventListener("change", (e) => {
+    if (e.target.name === "pid") update();
+  });
+  update();
+}
+
+/** 選択した商品の ID と名前。 */
+export function selectedProducts(form, state) {
+  return new FormData(form).getAll("pid").map((id) => state.products.get(String(id))).filter(Boolean);
+}
+
 export const delta = (v) =>
   html`<span class="num ${v > 0 ? "pos" : v < 0 ? "neg" : ""}">${v > 0 ? "+" : ""}${n(v)}</span>`;
 

@@ -2,7 +2,7 @@ import { go, searchHash } from "../app.js";
 import { mutate } from "../db.js";
 import { parseProductFile } from "../domain/files.js";
 import {
-  StockError, deleteProduct, importProducts, matches, paginate, productTotal, productsByName, saveProduct, sortedProducts, todayJst,
+  StockError, importProducts, matches, paginate, productTotal, productsByName, saveProduct, sortedProducts, todayJst,
 } from "../domain/inventory.js";
 import { tryNormalize } from "../domain/jan.js";
 import { parseQuantity } from "../domain/tables.js";
@@ -60,7 +60,7 @@ export function render(ctx) {
         <button class="ghost">検索</button>
       </form>
       ${page.items.length ? html`<div class="table-wrap"><table>
-        <thead><tr><th>キャラクター</th><th>商品名</th><th>ブランド</th><th>JANコード</th><th>品番</th><th class="r">上代</th><th class="r">総在庫</th><th></th></tr></thead>
+        <thead><tr><th>キャラクター</th><th>商品名</th><th>ブランド</th><th>JANコード</th><th>品番</th><th class="r">上代</th><th class="r">総在庫</th></tr></thead>
         <tbody>${page.items.map((p) => {
           const total = productTotal(ctx.state, p.id);
           return html`<tr>
@@ -68,9 +68,7 @@ export function render(ctx) {
             <td class="name"><a href="#/products/${p.id}">${p.name}</a></td><td>${p.brand}</td>
             <td class="mono">${p.jan || ""}${p.jan ? "" : html`<span class="chip k">JANなし</span>`}</td><td>${p.sku}</td>
             <td class="r">${p.price == null ? "" : n(p.price)}</td>
-            <td class="r">${stockQty(total)}</td>
-            <td class="r"><button type="button" class="danger sm" data-click="remove" data-id="${p.id}"
-              data-confirm="${`「${p.name}」を削除しますか？\n各拠点のこの商品の在庫も削除されます（元に戻せません）。`}">削除</button></td></tr>`;
+            <td class="r">${stockQty(total)}</td></tr>`;
         })}</tbody></table></div>${pager(page, ctx.urlWith)}`
         : empty(q ? "該当する商品はありません。" : "商品はまだ登録されていません。")}
     </section>`,
@@ -112,11 +110,6 @@ export const actions = {
         + (result.errors.length > 10 ? ` ほか${result.errors.length - 10}件` : "")
       : null;
     go("#/products", { msg: `商品マスタを取り込みました：新規 ${result.created}件、更新 ${result.updated}件`, error: errors });
-  },
-  async remove(ctx, el) {
-    const name = ctx.state.products.get(el.dataset.id)?.name || "";
-    await mutate((W) => deleteProduct(W, el.dataset.id));
-    go(ctx.urlWith(), { msg: `商品「${name}」を削除しました` });
   },
   async template() {
     await download(await productMasterWorkbook(), "product_master.xlsx");

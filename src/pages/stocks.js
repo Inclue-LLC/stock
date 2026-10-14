@@ -1,6 +1,7 @@
 import { go, searchHash } from "../app.js";
 import { CATEGORIES, REGIONS, TYPES, paginate, productTotals, sortedLocations, stockRows } from "../domain/inventory.js";
-import { badge, empty, html, icon, locationOptions, n, pager, stockLegend, stockQty } from "../ui.js";
+import { badge, bulkBar, empty, html, icon, locationOptions, n, pager, selectCell, selectHeader, stockLegend, stockQty, wireBulk } from "../ui.js";
+import { bulkDelete } from "./bulkDelete.js";
 import { download, stockExportWorkbook } from "../xlsxWrite.js";
 
 function filters(ctx) {
@@ -22,10 +23,11 @@ export function render(ctx) {
 
   const table = view === "product"
     ? html`<table>
-        <thead><tr><th>キャラクター</th><th>商品</th><th>ブランド</th><th>JANコード</th>
+        <thead><tr>${selectHeader()}<th>キャラクター</th><th>商品</th><th>ブランド</th><th>JANコード</th>
           ${CATEGORIES.map(([r, t]) => html`<th class="r">${REGIONS[r]}<br><span class="chip t-${t}">${TYPES[t]}</span></th>`)}
           <th class="r">合計</th></tr></thead>
         <tbody>${page.items.map(([p, ...qtys]) => html`<tr>
+          ${selectCell(p)}
           <td>${p.character}</td>
           <td class="name"><a href="#/products/${p.id}">${p.name}</a>${p.sku ? html`<span class="sub">${p.sku}</span>` : ""}</td>
           <td>${p.brand}</td><td class="mono">${p.jan || "JANなし"}</td>
@@ -33,8 +35,9 @@ export function render(ctx) {
           <td class="r">${stockQty(qtys[qtys.length - 1])}</td></tr>`)}</tbody>
       </table>`
     : html`<table>
-        <thead><tr><th>キャラクター</th><th>商品</th><th>JANコード</th><th>拠点</th><th>区分</th><th class="r">在庫数</th></tr></thead>
+        <thead><tr>${selectHeader()}<th>キャラクター</th><th>商品</th><th>JANコード</th><th>拠点</th><th>区分</th><th class="r">在庫数</th></tr></thead>
         <tbody>${page.items.map((s) => html`<tr>
+          ${selectCell(s.product)}
           <td>${s.product.character}</td>
           <td class="name"><a href="#/products/${s.product.id}">${s.product.name}</a>${s.product.sku ? html`<span class="sub">${s.product.sku}</span>` : ""}</td>
           <td class="mono">${s.product.jan || "JANなし"}</td><td>${s.location.name}</td><td>${badge(s.location)}</td>
@@ -57,12 +60,18 @@ export function render(ctx) {
         <button class="ghost">絞り込み</button>
         ${stockLegend()}
       </form>
-      ${page.items.length ? html`<div class="table-wrap">${table}</div>${pager(page, ctx.urlWith)}` : empty("該当する在庫はありません。")}
+      ${page.items.length ? html`<form data-action="bulkDelete">${bulkBar()}<div class="table-wrap">${table}</div></form>${pager(page, ctx.urlWith)}`
+        : empty("該当する在庫はありません。")}
     </section>`,
   };
 }
 
+export function mounted(ctx, root) {
+  wireBulk(root);
+}
+
 export const actions = {
+  bulkDelete,
   search(ctx, form) {
     go(searchHash(ctx, form, ["view"]));
   },
