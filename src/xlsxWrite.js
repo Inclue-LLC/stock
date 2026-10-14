@@ -58,9 +58,9 @@ function janCheckFormula(c, rng) {
 export async function productMasterWorkbook(rows = 3000) {
   const wb = await workbook();
   const ws = wb.addWorksheet("商品マスタ");
-  header(ws, [["JANコード", 18], ["商品名", 40], ["キャラクター名", 18], ["ブランド", 20], ["上代（税込）", 13], ["品番", 16],
+  header(ws, [["JANコード", 18], ["キャラクター名", 18], ["商品名", 40], ["ブランド", 20], ["上代（税込）", 13], ["品番", 16],
     ["単位", 9], ["備考", 30], ["JANチェック（自動）", 20]],
-  [REQUIRED, REQUIRED, HEADER, HEADER, HEADER, HEADER, HEADER, HEADER, AUTO]);
+  [REQUIRED, HEADER, REQUIRED, HEADER, HEADER, HEADER, HEADER, HEADER, AUTO]);
   const last = rows + 1;
   for (let r = 2; r <= last; r++) {
     const row = ws.getRow(r);
@@ -124,8 +124,8 @@ function productGuide(ws) {
   });
   const items = [
     ["JANコード", "必須", "4580703202780", "8桁または13桁の数字。セルは文字列形式なので、先頭の0や13桁もそのまま入力できます。"],
-    ["商品名", "必須", "むぎゅっとカードホルダー", "画面や帳票に表示される名前。"],
     ["キャラクター名", "", "パム", "一覧の並び順（キャラクター名 → JANコード）と検索に使います。"],
+    ["商品名", "必須", "むぎゅっとカードホルダー", "画面や帳票に表示される名前。"],
     ["ブランド", "", "Lovely MongMong", "店舗別画面でブランドごとにまとめて表示します。"],
     ["上代（税込）", "", "1650", "税込の販売価格（円）。販売金額・在庫金額の計算に使います。"],
     ["品番", "", "SK-001", "社内の品番・型番など。JAN の代わりに品番で取込することもできます。"],
@@ -148,7 +148,7 @@ function productGuide(ws) {
 export async function stockImportWorkbook(rows = 1000) {
   const wb = await workbook();
   const ws = wb.addWorksheet("在庫取込");
-  header(ws, [["JANコード", 18], ["商品名", 36], ["キャラクター名", 18], ["数量", 10], ["拠点", 20], ["備考", 40]],
+  header(ws, [["JANコード", 18], ["キャラクター名", 18], ["商品名", 36], ["数量", 10], ["拠点", 20], ["備考", 40]],
     [REQUIRED, HEADER, HEADER, REQUIRED, HEADER, HEADER]);
   for (let r = 2; r <= rows + 1; r++) {
     const row = ws.getRow(r);
