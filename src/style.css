@@ -332,3 +332,15 @@ tbody tr.selected td { background: var(--err-soft); }
 .pick:hover { border-color: var(--accent); text-decoration: none; }
 .pick.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .pick.on:not(:first-of-type)::before { content: "✓"; font-size: 11px; }
+
+/* 取込の確認: 登録済みの商品名とファイルの商品名の選択 */
+.row-diff td { background: var(--warn-soft); }
+tbody tr.row-diff:hover td { background: var(--warn-soft); }
+.name-diff-bar { padding-bottom: 0; }
+.name-diff-bar .setall { display: inline-flex; gap: 6px; margin-left: 8px; vertical-align: middle; }
+.name-choice { display: grid; gap: 4px; }
+.name-choice label { display: flex; align-items: flex-start; justify-content: flex-start; gap: 8px; cursor: pointer; font-weight: 400; text-align: left; min-width: 280px; }
+.name-choice input { width: auto; flex: none; margin: 3px 0 0; min-height: 0; }
+.name-choice span { flex: 1; }
+.name-choice small { display: inline-block; min-width: 4.5em; color: var(--muted); font-size: 11px; font-weight: 600; }
+.name-choice input:checked + span { font-weight: 700; }

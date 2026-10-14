@@ -93,7 +93,7 @@ describe("在庫取込", () => {
     expect(preview.map((p) => p.errors.length > 0)).toEqual([false, false, false, true, true, true]);
     expect(preview[1].product).toBeNull(); // 新規商品
     const [after, r] = apply(st, batch);
-    expect(r).toEqual({ applied: 3, skipped: 3, zeroed: 0 });
+    expect(r).toEqual({ applied: 3, skipped: 3, zeroed: 0, renamed: 0 });
     expect(qty(after, JAN_A, "上海倉庫")).toBe(12);
     expect(qty(after, JAN_B, "東京倉庫")).toBe(8);
     expect(productByJan(after, JAN_C)).toBeNull();
@@ -289,6 +289,22 @@ describe("キャラクター名", () => {
     expect(new Set(pick(["タルト", "パム"]))).toEqual(new Set(["タルト", "パム"]));
     expect(pick([""]).every((c) => c === "なし")).toBe(true);
     expect(pick([])).toHaveLength(productTotals(commit(W)).length);
+  });
+
+  it("JAN が同じで商品名が違う行: 確認画面で知らせ、選んだ行だけ商品名を変える", async () => {
+    const st = seeded();
+    const data = await xlsx([["JAN", "商品名", "数量"], [JAN_A, "商品Ａ", 1], [JAN_A, "商品A 新パッケージ", 2], [JAN_A, "", 3]]);
+    const batch = await batchFrom("n.xlsx", data, "IN", st, "東京倉庫");
+    // 全角・半角の違いだけなら同じ名前、商品名が空の行も対象外
+    expect(validateBatch(st, batch).map((p) => p.name_diff)).toEqual([false, true, false]);
+    let W = working(st);
+    expect(applyBatch(W, batch).renamed).toBe(0);
+    expect(productByJan(W, JAN_A).name).toBe("商品A"); // 選ばなければ登録済みのまま
+    W = working(st);
+    const r = applyBatch(W, batch, Date.now(), { renames: [1] });
+    expect([r.applied, r.renamed]).toEqual([3, 1]);
+    expect(productByJan(W, JAN_A).name).toBe("商品A 新パッケージ");
+    expect(qty(commit(W), JAN_A, "東京倉庫")).toBe(6);
   });
 
   it("出力する Excel に品番・単位の列はない", async () => {

@@ -356,7 +356,13 @@ export function importProducts(W, rows) {
 
 // ---- 在庫取込 --------------------------------------------------------------------
 
-/** 各行に商品・拠点の解決結果とエラーを付けたプレビュー用リストを返す。 */
+/** 商品名の比較用（全角・半角、空白の違いは同じとみなす）。 */
+const nameKey = (s) => String(s || "").normalize("NFKC").replace(/\s+/g, " ").trim();
+
+/**
+ * 各行に商品・拠点の解決結果とエラーを付けたプレビュー用リストを返す。
+ * name_diff: 登録済みの商品と、ファイルの商品名が違う（JAN・品番で照合した行）
+ */
 export function validateBatch(state, batch) {
   const pending = new Map(); // 同一ファイル内の累積（出庫時の在庫チェック用）
   const defaultLoc = batch.location_id ? state.locations.get(batch.location_id) || null : null;
@@ -366,6 +372,7 @@ export function validateBatch(state, batch) {
     const [product, code, err] = findProduct(state, row.jan || "", row.sku || "", row.name || "");
     item.product = product;
     item.jan_code = code;
+    item.name_diff = !!(product && row.name && nameKey(row.name) !== nameKey(product.name));
     // 同一ファイル内で同じ商品を指す行をまとめるためのキー
     item.key = product ? `id:${product.id}` : code || `name:${row.name || ""}`;
     if (err) item.errors.push(err);
@@ -406,8 +413,13 @@ export function missingStocks(state, batch, preview) {
     .sort((a, b) => ja(a.location.name, b.location.name) || ja(a.product.name, b.product.name));
 }
 
-/** 取込を反映する。W は working() の作業コピー。戻り値 { applied, skipped, zeroed } */
-export function applyBatch(W, batch, now = Date.now()) {
+/**
+ * 取込を反映する。W は working() の作業コピー。戻り値 { applied, skipped, zeroed, renamed }
+ * renames: 商品名をファイルの名前に変える行の番号（index）。それ以外は登録済みの商品名のまま。
+ */
+export function applyBatch(W, batch, now = Date.now(), { renames = [] } = {}) {
+  const rename = new Set(renames.map(Number));
+  let renamed = 0;
   if (batch.status !== "pending") throw new StockError("この取込はすでに処理済みです");
   let applied = 0;
   let skipped = 0;
@@ -432,6 +444,11 @@ export function applyBatch(W, batch, now = Date.now()) {
       if (product.price == null) product.price = item.price;
       saveProduct(W, product);
     }
+    if (item.name_diff && rename.has(item.index) && nameKey(product.name) !== nameKey(item.name)) {
+      product.name = item.name;
+      saveProduct(W, product);
+      renamed++;
+    }
     applyMovement(W, { productId: product.id, locationId: item.location.id, kind: batch.kind, quantity: item.quantity,
       date: batch.date, note: item.note || batch.filename, now });
     applied++;
@@ -440,7 +457,7 @@ export function applyBatch(W, batch, now = Date.now()) {
     applyMovement(W, { productId: s.product.id, locationId: s.location.id, kind: "SET", quantity: 0, date: batch.date,
       note: `${batch.filename} に記載なし`, now });
   }
-  return { applied, skipped, zeroed: missing.length };
+  return { applied, skipped, zeroed: missing.length, renamed };
 }
 
 /** 拠点の在庫一覧（キャラクター名 → JANコード順）。[{ product, q }] */

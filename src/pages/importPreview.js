@@ -13,6 +13,7 @@ export async function render(ctx) {
   const missing = preview.length ? missingStocks(ctx.state, batch, preview) : [];
   const ok = preview.filter((p) => !p.errors.length).length;
   const newProducts = preview.filter((p) => !p.errors.length && !p.product).length;
+  const diffs = preview.filter((p) => !p.errors.length && p.name_diff).length;
   const warnings = batch.warnings || [];
   return {
     title: "更新内容の確認",
@@ -33,18 +34,27 @@ export async function render(ctx) {
         <form data-action="setLocation" class="toolbar"><span class="hint">「拠点」列が空の行の拠点</span>
           <select name="location_id" data-autosubmit>${locationOptions(sortedLocations(ctx.state), batch.location_id, "未指定")}</select></form>
       </div>
+      <form data-action="apply">
+      ${diffs ? html`<div class="card-body name-diff-bar"><div class="alert warn" style="margin:0">${icon("alert")}<span>
+        登録済みの商品と<b>商品名が違う行が ${diffs}件</b>あります。行ごとに、登録済みの商品名のままにするか、ファイルの商品名に変えるかを選んでください。
+        <span class="setall"><button type="button" class="ghost sm" data-setall="keep">すべて登録済みのまま</button>
+        <button type="button" class="ghost sm" data-setall="file">すべてファイルの商品名にする</button></span></span></div></div>` : ""}
       ${preview.length ? html`<div class="table-wrap"><table>
         <thead><tr><th>#</th><th>商品</th><th>JANコード</th><th>拠点</th><th class="r">数量</th><th class="r">現在</th><th class="r">反映後</th><th>確認</th></tr></thead>
-        <tbody>${preview.map((p) => html`<tr class="${p.errors.length ? "row-err" : p.product ? "" : "row-new"}">
+        <tbody>${preview.map((p) => html`<tr class="${p.errors.length ? "row-err" : !p.product ? "row-new" : p.name_diff ? "row-diff" : ""}">
           <td class="muted">${p.index + 1}</td>
-          <td class="name">${p.product ? p.product.name : p.name}${p.sku ? html`<span class="sub">${p.sku}</span>` : ""}</td>
+          <td class="name">${p.name_diff && !p.errors.length ? html`<div class="name-choice">
+              <label><input type="radio" name="rn_${p.index}" value="keep" checked><span><small>登録済み</small>${p.product.name}</span></label>
+              <label><input type="radio" name="rn_${p.index}" value="file"><span><small>ファイル</small>${p.name}</span></label>
+            </div>` : p.product ? p.product.name : p.name}${p.sku ? html`<span class="sub">${p.sku}</span>` : ""}</td>
           <td class="mono">${p.jan_code || p.jan || "JANなし"}</td>
           <td>${p.location ? p.location.name : p.location_name || ""}</td>
           <td class="r"><b>${p.quantity == null ? "?" : n(p.quantity)}</b></td>
           <td class="r muted">${p.current == null ? "" : n(p.current)}</td>
           <td class="r">${p.after == null ? "" : n(p.after)}</td>
           <td>${p.errors.length ? html`<span class="neg">${p.errors.join(" / ")}</span>`
-            : p.product ? html`<span class="chip s-applied">OK</span>` : html`<span class="chip s-pending">新規商品</span>`}</td>
+            : !p.product ? html`<span class="chip s-pending">新規商品</span>`
+            : p.name_diff ? html`<span class="chip s-pending">商品名が違う</span>` : html`<span class="chip s-applied">OK</span>`}</td>
         </tr>`)}</tbody></table></div>` : empty("読み取れた行はありません。")}
       ${missing.length ? html`<div class="card-body" style="border-top:1px solid var(--border)"><details class="more">
         <summary>ファイルにない商品 ${missing.length}件の在庫を0にします（クリックで一覧）</summary>
@@ -52,14 +62,24 @@ export async function render(ctx) {
           html`<li>${s.location.name}：${s.product.name} <span class="mono muted">${s.product.jan || ""}</span>（現在 ${n(s.q)}）</li>`)}</ul>
       </details></div>` : ""}
       <div class="card-body actions" style="border-top:1px solid var(--border)">
-        <button class="lg" data-click="apply" ${ok ? "" : "disabled"}>${icon("check")}${ok}件を反映する${newProducts ? `（新規商品 ${newProducts}件）` : ""}${missing.length ? `・${missing.length}件を0に` : ""}</button>
+        <button class="lg" ${ok ? "" : "disabled"}>${icon("check")}${ok}件を反映する${newProducts ? `（新規商品 ${newProducts}件）` : ""}${missing.length ? `・${missing.length}件を0に` : ""}</button>
         <button class="ghost lg" data-click="cancel">取り消す</button>
         ${ok < preview.length ? html`<span class="hint">エラーの ${preview.length - ok} 件は反映されません</span>` : ""}
       </div>
+      </form>
     </section>` : html`<section class="card"><div class="card-body actions">
       ${batch.status === "applied" ? html`<a class="btn" href="#/movements?batch_id=${batch.id}">反映された履歴を見る</a>` : ""}
       <a class="btn ghost" href="#/imports">在庫の更新に戻る</a></div></section>`}`,
   };
+}
+
+export function mounted(ctx, root) {
+  // 「すべて〜」で商品名の選択をまとめて切り替える
+  for (const b of root.querySelectorAll("[data-setall]")) {
+    b.addEventListener("click", () => {
+      for (const r of root.querySelectorAll(`.name-choice input[value="${b.dataset.setall}"]`)) r.checked = true;
+    });
+  }
 }
 
 export const actions = {
@@ -67,10 +87,12 @@ export const actions = {
     await updateImport(ctx.args[0], { location_id: new FormData(form).get("location_id") || null });
     go(`#/imports/${ctx.args[0]}`);
   },
-  async apply(ctx) {
+  async apply(ctx, form) {
     const id = ctx.args[0];
-    const r = await applyImport(id);
+    const renames = [...new FormData(form)].filter(([k, v]) => k.startsWith("rn_") && v === "file").map(([k]) => Number(k.slice(3)));
+    const r = await applyImport(id, { renames });
     let msg = `${r.applied}件を反映しました${r.skipped ? `（エラー ${r.skipped}件はスキップ）` : ""}`;
+    if (r.renamed) msg += `。商品名を ${r.renamed}件変更しました`;
     if (r.zeroed) msg += `。ファイルにない ${r.zeroed}件を0にしました`;
     go(`#/imports/${id}`, { msg });
   },
