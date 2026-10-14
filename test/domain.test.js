@@ -300,3 +300,20 @@ describe("キャラクター名", () => {
     expect(sw.getRow(1).values.slice(1, 7)).toEqual(["JANコード", "キャラクター名", "商品名", "数量", "拠点", "備考"]);
   });
 });
+
+describe("拠点別の在庫一覧", () => {
+  it("キャラクター名 → JANコード順・在庫0は既定で非表示・検索", async () => {
+    const { locationStockRows, saveProduct: save, working: w } = await import("../src/domain/inventory.js");
+    let st = seeded();
+    const W = w(st);
+    save(W, { jan: JAN_B, name: "缶バッジ", character: "タルト" });
+    save(W, { jan: JAN_C, name: "ぬいぐるみ", character: "パム" });
+    st = commit(W);
+    st = move(move(move(st, "IN", 2, "大阪委託店", JAN_C), "IN", 3, "大阪委託店", JAN_B), "IN", 1, "大阪委託店", JAN_A);
+    st = move(st, "OUT", 1, "大阪委託店", JAN_A);
+    const lid = locationByName(st, "大阪委託店").id;
+    expect(locationStockRows(st, lid).map((r) => [r.product.jan, r.q])).toEqual([[JAN_B, 3], [JAN_C, 2]]);
+    expect(locationStockRows(st, lid, { includeZero: true }).map((r) => r.product.jan)).toEqual([JAN_B, JAN_C, JAN_A]);
+    expect(locationStockRows(st, lid, { q: "パム" }).map((r) => r.product.jan)).toEqual([JAN_C]);
+  });
+});

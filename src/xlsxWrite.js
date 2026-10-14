@@ -1,6 +1,6 @@
 // ダウンロード用の Excel（テンプレート・出力）を作る。ExcelJS は大きいので必要なときだけ読み込む。
 
-import { CATEGORIES, REGIONS, TYPES, productTotals, sortedProducts, stockRows, storeReport } from "./domain/inventory.js";
+import { CATEGORIES, REGIONS, TYPES, locationStockRows, productTotals, sortedProducts, stockRows } from "./domain/inventory.js";
 
 const FONT = "Meiryo UI";
 const fill = (argb) => ({ type: "pattern", pattern: "solid", fgColor: { argb } });
@@ -193,24 +193,15 @@ export async function stockExportWorkbook(state, view, filters) {
 }
 
 export async function storeExportWorkbook(state, location, filters) {
-  const rep = storeReport(state, location.id, filters);
   const wb = await workbook();
   const ws = wb.addWorksheet(location.name.slice(0, 31).replace(/[\\/?*[\]:]/g, " "));
-  const dates = rep.delivery_dates;
-  headerRow(ws, ["ブランド", "キャラクター名", "商品名", "JANコード", "上代（税込）", ...dates.map((d) => `${d.slice(2).replace(/-/g, "/")} 納品`),
-    "納品数 合計", "販売数", "在庫更新差分", "在庫数", "消化率（販売÷(販売+在庫)）", "販売金額（上代）", "在庫金額（上代）"]);
-  for (const r of rep.rows) {
-    ws.addRow([r.product.brand, r.product.character, r.product.name, r.product.jan, r.product.price, ...dates.map((d) => r.deliveries[d] || null),
-      r.delivered, r.sold, r.adjusted || null, r.stock, r.sell_through, r.sales_amount, r.stock_amount]);
+  headerRow(ws, ["キャラクター名", "商品名", "JANコード", "在庫数"]);
+  for (const r of locationStockRows(state, location.id, filters)) {
+    ws.addRow([r.product.character, r.product.name, r.product.jan, r.q]);
   }
-  const n = 5 + dates.length + 7;
-  ws.getColumn(4).numFmt = "@";
-  ws.getColumn(5).numFmt = "#,##0";
-  ws.getColumn(n - 2).numFmt = "0.0%";
-  ws.getColumn(n - 1).numFmt = "#,##0";
-  ws.getColumn(n).numFmt = "#,##0";
-  [18, 16, 40, 16, 12].forEach((w, i) => (ws.getColumn(i + 1).width = w));
-  ws.views = [{ state: "frozen", xSplit: 3, ySplit: 1 }];
+  ws.getColumn(3).numFmt = "@";
+  ws.getColumn(4).numFmt = "#,##0";
+  [18, 40, 16, 10].forEach((w, i) => (ws.getColumn(i + 1).width = w));
   return wb;
 }
 

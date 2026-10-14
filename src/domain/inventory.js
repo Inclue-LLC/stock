@@ -428,6 +428,16 @@ export function applyBatch(W, batch, now = Date.now()) {
   return { applied, skipped, zeroed: missing.length };
 }
 
+/** 拠点の在庫一覧（キャラクター名 → JANコード順）。[{ product, q }] */
+export function locationStockRows(state, locationId, { q = "", includeZero = false } = {}) {
+  const rows = [];
+  for (const [pid, s] of state.stocks.get(locationId) || []) {
+    const product = state.products.get(pid);
+    if (product && matches(product, q) && (includeZero || s.q !== 0)) rows.push({ product, q: s.q });
+  }
+  return rows.sort((a, b) => compareProducts(a.product, b.product));
+}
+
 // ---- 拠点（店舗）別レポート ------------------------------------------------------------
 
 export function sellThrough(sold, stock) {
