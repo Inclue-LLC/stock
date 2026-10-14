@@ -5,17 +5,15 @@ import { StockError, sortedLocations, todayJst } from "../domain/inventory.js";
 import { PLAN_STATUS, planQuantity, planTitle, resolveLine } from "../domain/plans.js";
 import { empty, html, icon, locationOptions, n } from "../ui.js";
 
-// 入力中に他の人の更新で消えないよう、自動では描き直さない。
-// ただし保存直後でまだデータが届いていない（「見つかりません」を表示した）ときは、届いたら描き直す。
-let waitingForData = false;
-export const live = () => waitingForData;
+// データが変わったら描き直す（入力中のフォームがあるときは app.js の formDirty で描き直さない）
+export const live = true;
 
 export function render(ctx) {
   const plan = ctx.state.plans?.get(ctx.args[0]);
-  waitingForData = !plan;
   if (!plan) return { title: "納品予定が見つかりません", body: empty("削除されたか、URL が正しくありません。", "#/plans", "納品予定の一覧へ") };
   const locs = sortedLocations(ctx.state);
   const showComplete = plan.status !== "done";
+  const editable = !plan.applied; // 在庫に反映済みの予定は数量を変えられない
   const src = plan.source_id ? ctx.state.locations.get(plan.source_id) : null;
   const dest = ctx.state.locations.get(plan.location_id);
   return {
@@ -36,17 +34,23 @@ export function render(ctx) {
 
     <section class="card">
       <div class="card-head"><h2>明細</h2><span class="muted">${plan.lines.length}件・合計 ${n(planQuantity(plan))}点</span></div>
-      ${plan.lines.length ? html`<div class="table-wrap" style="margin-top:12px"><table>
+      ${plan.lines.length ? html`<form data-action="saveLines">
+      ${editable ? html`<div class="bulkbar"><span class="hint">数量を入力して保存できます（0 にした行は明細から削除）</span>
+        <span class="qty-save" data-lines-save hidden><span class="changed-count" data-lines-count></span>
+          <button class="sm">${icon("check")}数量を保存</button>
+          <button type="button" class="ghost sm" data-lines-reset>元に戻す</button></span></div>` : ""}
+      <div class="table-wrap"><table>
         <thead><tr><th>キャラクター</th><th>商品</th><th>JANコード</th><th class="r">数量</th><th></th></tr></thead>
-        <tbody>${plan.lines.map((l) => {
+        <tbody>${plan.lines.map((l, i) => {
           const [product, , err] = resolveLine(ctx.state, l);
           return html`<tr>
             <td>${product?.character || l.character || ""}</td>
             <td class="name">${product ? html`<a href="#/products/${product.id}">${product.name}</a>` : l.name}</td>
             <td class="mono">${(product ? product.jan : l.jan) || "JANなし"}</td>
-            <td class="r"><b>${n(l.quantity)}</b></td>
+            <td class="r">${editable ? html`<input type="number" class="line-qty" name="q_${i}" min="0" step="1" inputmode="numeric"
+              value="${l.quantity}" data-orig="${l.quantity}" aria-label="${l.name}の数量">` : html`<b>${n(l.quantity)}</b>`}</td>
             <td class="hint">${err ? html`<span class="neg">${err}</span>` : product ? "" : "完了時に新規商品として登録"}</td></tr>`;
-        })}</tbody></table></div>` : empty("明細はありません。")}
+        })}</tbody></table></div></form>` : empty("明細はありません。")}
     </section>
 
     <section class="card">
@@ -69,6 +73,7 @@ export function render(ctx) {
 }
 
 export function mounted(ctx, root) {
+  wireLines(root);
   if (ctx.q("complete") === "1") root.querySelector("#complete")?.scrollIntoView({ block: "start" });
 }
 
@@ -81,7 +86,44 @@ function readForm(form) {
     memo: String(f.get("memo") || "") };
 }
 
+/** 明細の数量: 変更件数の表示・元に戻す・Enter で保存 */
+function wireLines(root) {
+  const form = root.querySelector('form[data-action="saveLines"]');
+  const bar = form?.querySelector("[data-lines-save]");
+  if (!bar) return;
+  const inputs = () => [...form.querySelectorAll(".line-qty")];
+  const update = () => {
+    const count = inputs().filter((i) => i.value !== i.dataset.orig).length;
+    for (const i of inputs()) i.classList.toggle("changed", i.value !== i.dataset.orig);
+    bar.hidden = count === 0;
+    bar.querySelector("[data-lines-count]").textContent = `${count}件の数量を変更中`;
+  };
+  form.addEventListener("input", update);
+  form.addEventListener("focusin", (e) => e.target.matches(".line-qty") && e.target.select());
+  bar.querySelector("[data-lines-reset]").addEventListener("click", () => {
+    for (const i of inputs()) i.value = i.dataset.orig;
+    update();
+  });
+}
+
 export const actions = {
+  async saveLines(ctx, form) {
+    const plan = ctx.state.plans.get(ctx.args[0]);
+    if (!plan) throw new StockError("納品予定が見つかりません");
+    if (plan.applied) throw new StockError("在庫に反映済みの納品予定は数量を変更できません");
+    const f = new FormData(form);
+    const lines = [];
+    plan.lines.forEach((l, i) => {
+      const v = f.get(`q_${i}`);
+      const q = v === null ? l.quantity : Number(v);
+      if (v === "" || !Number.isInteger(q) || q < 0) throw new StockError(`「${l.name}」の数量は 0 以上の整数で入力してください`);
+      if (q > 0) lines.push({ ...l, quantity: q });
+    });
+    if (!lines.length) throw new StockError("すべての行を 0 にはできません。納品予定ごと削除してください");
+    const removed = plan.lines.length - lines.length;
+    await savePlan({ ...plan, lines });
+    go(location.hash, { msg: `数量を保存しました${removed ? `（${removed}行を明細から削除）` : ""}` });
+  },
   async export(ctx) {
     const plan = ctx.state.plans.get(ctx.args[0]);
     if (!plan) throw new StockError("納品予定が見つかりません");
