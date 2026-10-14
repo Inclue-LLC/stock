@@ -307,6 +307,30 @@ describe("キャラクター名", () => {
     expect(qty(commit(W), JAN_A, "東京倉庫")).toBe(6);
   });
 
+  it("在庫数の手入力（上書き・変わらないものは記録しない・負数や小数はエラー）", async () => {
+    const { setQuantities } = await import("../src/domain/inventory.js");
+    const st = move(seeded(), "IN", 5);
+    const W = working(st);
+    const pid = productByJan(W, JAN_A).id;
+    const tokyo = locationByName(W, "東京倉庫").id;
+    const osaka = locationByName(W, "大阪委託店").id;
+    expect(setQuantities(W, [{ productId: pid, locationId: tokyo, quantity: 5 }, { productId: pid, locationId: osaka, quantity: 3 }])).toBe(1);
+    expect(W.movements.at(-1)).toMatchObject({ k: "SET", d: 3, a: 3, n: "手入力" });
+    expect(qty(commit(W), JAN_A, "大阪委託店")).toBe(3);
+    expect(() => setQuantities(W, [{ productId: pid, locationId: tokyo, quantity: -1 }])).toThrow(StockError);
+    expect(() => setQuantities(W, [{ productId: pid, locationId: tokyo, quantity: 1.5 }])).toThrow(StockError);
+  });
+
+  it("納品予定の取込: 登録済みと商品名が違う商品を知らせ、選んだ名前を明細に使う", async () => {
+    const { plansFromRows, renameLines } = await import("../src/domain/plans.js");
+    const st = seeded();
+    const data = await xlsx([["JANコード", "商品名", "数量", "拠点"], [JAN_A, "商品Ａ", 1, "大阪委託店"], [JAN_A, "商品A 新版", 2, "北京委託店"]]);
+    const r = plansFromRows(st, (await parseStockFile("p.xlsx", data)).rows);
+    expect(r.diffs.map((d) => [d.product.name, d.names])).toEqual([["商品A", ["商品A 新版"]]]);
+    const renamed = renameLines(r.plans, [{ productId: r.diffs[0].product.id, name: "商品A 新版" }]);
+    expect(renamed.flatMap((p) => p.lines.map((l) => l.name))).toEqual(["商品A 新版", "商品A 新版"]);
+  });
+
   it("出力する Excel に品番・単位の列はない", async () => {
     const { stockExportWorkbook, backupWorkbook } = await import("../src/xlsxWrite.js");
     const st = seeded();

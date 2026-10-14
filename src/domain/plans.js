@@ -5,7 +5,7 @@
 //         done_date, applied: 在庫に反映したか, created_at, updated_at }
 
 import { tryNormalize } from "./jan.js";
-import { StockError, applyMovement, locationByName, productByJan, productsByName, saveProduct } from "./inventory.js";
+import { StockError, applyMovement, locationByName, nameKey, productByJan, productsByName, saveProduct } from "./inventory.js";
 
 export const PLAN_STATUS = { todo: "予定", doing: "準備中", done: "完了", cancelled: "取消" };
 export const OPEN_STATUSES = ["todo", "doing"];
@@ -84,12 +84,14 @@ export function applyPlan(W, plan, date) {
 /**
  * 取込ファイルの行から納品予定を作る。拠点ごとに1件。
  * タイトルは「拠点名＋追加納品」。options: { source_id, location_id: 「拠点」列が空の行に使う納品先 }
- * 戻り値: { plans, errors: ["N行目: ..."], lines: 取り込んだ行数 }
+ * 戻り値: { plans, errors: ["N行目: ..."], lines: 取り込んだ行数,
+ *          diffs: 登録済みと商品名が違う商品 [{ product, names: [ファイルの商品名...] }] }
  */
 export function plansFromRows(state, rows, { source_id = "", location_id = "" } = {}) {
   const groups = new Map();
   const errors = [];
   let lines = 0;
+  const diffs = new Map();
   rows.forEach((row, i) => {
     const no = `${i + 1}件目`;
     const loc = row.location ? locationByName(state, row.location) : state.locations.get(location_id) || null;
@@ -110,6 +112,11 @@ export function plansFromRows(state, rows, { source_id = "", location_id = "" } 
       errors.push(`${no}: ${err}`);
       return;
     }
+    if (product && row.name && nameKey(row.name) !== nameKey(product.name)) {
+      if (!diffs.has(product.id)) diffs.set(product.id, { product, names: [] });
+      const d = diffs.get(product.id);
+      if (!d.names.some((x) => nameKey(x) === nameKey(row.name))) d.names.push(row.name);
+    }
     if (!groups.has(loc.id)) groups.set(loc.id, []);
     groups.get(loc.id).push(product
       ? { product_id: product.id, jan: product.jan || "", name: product.name, character: row.character || product.character || "",
@@ -120,5 +127,11 @@ export function plansFromRows(state, rows, { source_id = "", location_id = "" } 
   const plans = [...groups].map(([lid, items]) => ({
     ...emptyPlan(), title: `${state.locations.get(lid).name}追加納品`, location_id: lid, source_id, lines: items,
   }));
-  return { plans, errors, lines };
+  return { plans, errors, lines, diffs: [...diffs.values()] };
+}
+
+/** 商品名の変更（[{ productId, name }]）を、納品予定の明細の商品名にも反映する。 */
+export function renameLines(plans, renames) {
+  const names = new Map(renames.map((r) => [r.productId, r.name]));
+  return plans.map((p) => ({ ...p, lines: p.lines.map((l) => (names.has(l.product_id) ? { ...l, name: names.get(l.product_id) } : l)) }));
 }

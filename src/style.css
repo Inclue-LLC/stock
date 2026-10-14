@@ -337,10 +337,28 @@ tbody tr.selected td { background: var(--err-soft); }
 .row-diff td { background: var(--warn-soft); }
 tbody tr.row-diff:hover td { background: var(--warn-soft); }
 .name-diff-bar { padding-bottom: 0; }
-.name-diff-bar .setall { display: inline-flex; gap: 6px; margin-left: 8px; vertical-align: middle; }
+.setall { display: inline-flex; gap: 6px; margin-left: 8px; vertical-align: middle; }
 .name-choice { display: grid; gap: 4px; }
 .name-choice label { display: flex; align-items: flex-start; justify-content: flex-start; gap: 8px; cursor: pointer; font-weight: 400; text-align: left; min-width: 280px; }
 .name-choice input { width: auto; flex: none; margin: 3px 0 0; min-height: 0; }
 .name-choice span { flex: 1; }
 .name-choice small { display: inline-block; min-width: 4.5em; color: var(--muted); font-size: 11px; font-weight: 600; }
 .name-choice input:checked + span { font-weight: 700; }
+
+/* 在庫数の手入力 */
+.qty-input { width: 6.5em; min-height: 32px; padding: 4px 8px; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.qty-input.qty-zero { background: var(--err-soft); color: var(--err); border-color: color-mix(in srgb, var(--err) 35%, transparent); }
+.qty-input.qty-low { background: var(--warn-soft); color: var(--warn); border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
+.qty-input.changed { outline: 2px solid var(--accent); outline-offset: 1px; }
+td.qty-cell { padding-top: 6px; padding-bottom: 6px; }
+.qty-save { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; }
+.qty-save[hidden] { display: none; }
+.qty-save .changed-count { font-size: 13px; font-weight: 700; color: var(--accent); }
+.qty-open { all: unset; cursor: pointer; padding: 2px 8px; border-radius: 6px; font-variant-numeric: tabular-nums; }
+.qty-open:hover, .qty-open:focus-visible { background: var(--accent-soft); color: var(--accent); outline: 1px solid var(--accent); }
+.qty-pop { position: absolute; z-index: 50; width: 340px; max-width: calc(100vw - 16px); background: var(--surface); border: 1px solid var(--border-strong);
+  border-radius: 12px; box-shadow: 0 12px 32px rgba(16, 24, 40, .18); padding: 14px; display: grid; gap: 10px; }
+.qty-pop-head { display: grid; gap: 2px; font-size: 13px; }
+.qty-pop-rows { display: grid; gap: 6px; max-height: 50vh; overflow: auto; }
+.qty-pop-rows label { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; }
+.qty-pop-actions { display: flex; gap: 8px; justify-content: flex-end; }

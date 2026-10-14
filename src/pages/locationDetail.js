@@ -1,7 +1,8 @@
 import { go, searchHash } from "../app.js";
 import { locationStockRows, paginate } from "../domain/inventory.js";
 import { openPlansFor } from "../domain/plans.js";
-import { badge, bulkBar, dateTime, empty, html, icon, n, pager, selectCell, selectHeader, stockLegend, stockQty, wireBulk } from "../ui.js";
+import { badge, bulkBar, dateTime, empty, html, icon, n, pager, qtyInput, qtySaveBar, selectCell, selectHeader, stockLegend, wireBulk, wireQtyEdit } from "../ui.js";
+import { saveQtyAction } from "./qtyEdit.js";
 import { bulkDelete } from "./bulkDelete.js";
 import { download, storeExportWorkbook } from "../xlsxWrite.js";
 
@@ -31,14 +32,14 @@ export function render(ctx) {
         <button class="ghost">絞り込み</button>
         ${stockLegend()}
       </form>
-      ${page.items.length ? html`<form data-action="bulkDelete">${bulkBar()}<div class="table-wrap"><table>
-        <thead><tr>${selectHeader()}<th>キャラクター</th><th>商品</th><th>JANコード</th><th class="r">在庫数</th></tr></thead>
+      ${page.items.length ? html`<form data-action="bulkDelete">${bulkBar(qtySaveBar())}<div class="table-wrap"><table>
+        <thead><tr>${selectHeader()}<th>キャラクター</th><th>商品</th><th>JANコード</th><th class="r">在庫数 <span class="hint">（入力して保存）</span></th></tr></thead>
         <tbody>${page.items.map(({ product: p, q }) => html`<tr>
           ${selectCell(p)}
           <td>${p.character}</td>
           <td class="name"><a href="#/products/${p.id}">${p.name}</a>${p.sku ? html`<span class="sub">${p.sku}</span>` : ""}</td>
           <td class="mono">${p.jan || "JANなし"}</td>
-          <td class="r">${stockQty(q, p.unit)}</td></tr>`)}</tbody>
+          <td class="r qty-cell">${qtyInput(p.id, location.id, q, `${p.name}の在庫数`)}</td></tr>`)}</tbody>
         <tfoot><tr><td></td><td colspan="3">合計 <span class="muted">${n(rows.length)}商品</span></td><td class="r">${n(total)}</td></tr></tfoot>
       </table></div></form>${pager(page, ctx.urlWith)}`
       : empty("該当する在庫はありません。", `#/imports?location_id=${location.id}`, "ファイルから更新する")}
@@ -48,10 +49,13 @@ export function render(ctx) {
 
 export function mounted(ctx, root) {
   wireBulk(root);
+  const form = root.querySelector('form[data-action="bulkDelete"]');
+  if (form) wireQtyEdit(form);
 }
 
 export const actions = {
   bulkDelete,
+  saveQty: saveQtyAction,
   search(ctx, form) {
     go(searchHash(ctx, form));
   },

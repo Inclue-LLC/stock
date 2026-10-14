@@ -84,13 +84,72 @@ export function stockQty(q, unit = "") {
 export const stockLegend = () =>
   html`<span class="legend"><span class="qty qty-zero">0</span> 在庫なし　<span class="qty qty-low">${LOW_STOCK}</span> ${LOW_STOCK}個以下</span>`;
 
+// ---- 在庫数の手入力 --------------------------------------------------------------
+
+export const qtyClass = (q) => (q <= 0 ? "qty-zero" : q <= LOW_STOCK ? "qty-low" : "");
+
+/** 在庫数の入力欄。data-orig と違う値になったものが「変更」。 */
+export const qtyInput = (productId, locationId, q, label = "") => html`<input type="number" class="qty-input ${qtyClass(q)}"
+  inputmode="numeric" min="0" step="1" value="${q}" data-orig="${q}" data-pid="${productId}" data-lid="${locationId}" aria-label="${label}">`;
+
+/** 一覧の上に出す「N件変更・保存・元に戻す」。変更があるときだけ表示する。 */
+export const qtySaveBar = () => html`<span class="qty-save" data-qty-save hidden>
+  <span class="changed-count" data-qty-count></span>
+  <button class="sm" data-click="saveQty">${icon("check")}在庫数を保存</button>
+  <button type="button" class="ghost sm" data-qty-reset>元に戻す</button>
+</span>`;
+
+/** 変更された入力欄 → [{ productId, locationId, quantity }] */
+export function changedQuantities(container) {
+  return [...container.querySelectorAll(".qty-input")].filter((i) => i.value !== i.dataset.orig).map((i) => ({
+    productId: i.dataset.pid, locationId: i.dataset.lid, quantity: i.value === "" ? NaN : Number(i.value),
+  }));
+}
+
+/** 入力欄の色・変更件数の表示・Enter で保存・元に戻す をつなぐ（画面の mounted から呼ぶ）。 */
+export function wireQtyEdit(container) {
+  const bar = container.querySelector("[data-qty-save]");
+  const update = () => {
+    let count = 0;
+    for (const i of container.querySelectorAll(".qty-input")) {
+      const changed = i.value !== i.dataset.orig;
+      if (changed) count++;
+      i.classList.toggle("changed", changed);
+      const q = i.value === "" ? 0 : Number(i.value);
+      i.classList.toggle("qty-zero", q <= 0);
+      i.classList.toggle("qty-low", q > 0 && q <= LOW_STOCK);
+    }
+    if (bar) {
+      bar.hidden = count === 0;
+      bar.querySelector("[data-qty-count]").textContent = `${count}件の在庫数を変更中`;
+    }
+  };
+  container.addEventListener("input", (e) => {
+    if (e.target.matches(".qty-input")) update();
+  });
+  container.addEventListener("focusin", (e) => {
+    if (e.target.matches(".qty-input")) e.target.select();
+  });
+  container.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || !e.target.matches(".qty-input")) return;
+    e.preventDefault(); // 一覧のフォーム（まとめて削除）を送信しない
+    container.querySelector('[data-click="saveQty"], .qty-pop button[type=submit]')?.click();
+  });
+  bar?.querySelector("[data-qty-reset]").addEventListener("click", () => {
+    for (const i of container.querySelectorAll(".qty-input")) i.value = i.dataset.orig;
+    update();
+  });
+  update();
+}
+
 // ---- まとめて削除（チェックボックス） ----------------------------------------------
 
 /** 一覧の上に出す「選択中の件数・削除ボタン」。表全体を <form data-action="bulkDelete"> で囲んで使う。 */
-export const bulkBar = () => html`<div class="bulkbar">
+export const bulkBar = (extra = "") => html`<div class="bulkbar">
   <label class="check"><input type="checkbox" data-select-all> すべて選択</label>
   <span class="muted" data-selected-count>0件選択中</span>
   <button class="danger sm" data-bulk-delete disabled>選択した商品を削除</button>
+  ${extra}
 </div>`;
 
 export const selectHeader = () => html`<th class="sel"></th>`;

@@ -13,7 +13,7 @@ export const REGIONS = { JP: "日本", CN: "中国" };
 export const TYPES = { WAREHOUSE: "倉庫", CONSIGNMENT: "委託店舗" };
 export const KINDS = { IN: "納品", OUT: "販売", SET: "在庫更新", TRANSFER_OUT: "移動出", TRANSFER_IN: "移動入" };
 export const IMPORT_KIND_LABELS = { SET: "在庫数を上書き", IN: "納品・入庫（加算）", OUT: "販売・出庫（減算）" };
-export const SOURCES = { MANUAL: "直接入力", EXCEL: "Excel", CSV: "CSV", PDF: "PDF" };
+export const SOURCES = { MANUAL: "手入力", EXCEL: "Excel", CSV: "CSV", PDF: "PDF" };
 export const LOW_STOCK = 10; // この数以下を「残りわずか」として目立たせる
 export const CATEGORIES = Object.keys(REGIONS).flatMap((r) => Object.keys(TYPES).map((t) => [r, t]));
 
@@ -354,10 +354,31 @@ export function importProducts(W, rows) {
   return result;
 }
 
+// ---- 手入力 ----------------------------------------------------------------------
+
+/**
+ * 画面で入力した在庫数で上書きする。changes: [{ productId, locationId, quantity }]
+ * 変わらないものは記録しない。戻り値: 変更した件数
+ */
+export function setQuantities(W, changes, { date = null, now = Date.now() } = {}) {
+  let changed = 0;
+  for (const { productId, locationId, quantity } of changes) {
+    const product = W.products.get(productId);
+    const location = W.locations.get(locationId);
+    if (!product || !location) throw new StockError("商品または拠点が見つかりません（他の人が削除した可能性があります）");
+    const q = Number(quantity);
+    if (!Number.isInteger(q) || q < 0) throw new StockError(`${product.name}（${location.name}）の在庫数は 0 以上の整数で入力してください`);
+    if (currentQty(W, locationId, productId) === q) continue;
+    applyMovement(W, { productId, locationId, kind: "SET", quantity: q, date: date || todayJst(new Date(now)), note: "手入力", now });
+    changed++;
+  }
+  return changed;
+}
+
 // ---- 在庫取込 --------------------------------------------------------------------
 
 /** 商品名の比較用（全角・半角、空白の違いは同じとみなす）。 */
-const nameKey = (s) => String(s || "").normalize("NFKC").replace(/\s+/g, " ").trim();
+export const nameKey = (s) => String(s || "").normalize("NFKC").replace(/\s+/g, " ").trim();
 
 /**
  * 各行に商品・拠点の解決結果とエラーを付けたプレビュー用リストを返す。

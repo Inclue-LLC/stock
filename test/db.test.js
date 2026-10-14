@@ -69,7 +69,7 @@ run("Firestore（エミュレータ）", () => {
     const batch = await db.getImport(id);
     expect(validateBatch(state, batch).filter((p) => !p.errors.length)).toHaveLength(2);
     const r = await db.applyImport(id);
-    expect(r).toEqual({ applied: 2, skipped: 0, zeroed: 0 });
+    expect(r).toEqual({ applied: 2, skipped: 0, zeroed: 0, renamed: 0 });
     const s = await waitFor((x) => productByJan(x, JAN_B));
     const lid = locationByName(s, "東京倉庫").id;
     expect(s.stocks.get(lid).get(productByJan(s, JAN_A).id).q).toBe(10);
@@ -130,6 +130,23 @@ run("Firestore（エミュレータ）", () => {
     await db.deletePlan(id);
     await waitFor((x) => !x.plans.get(id));
     await denied(setDoc(doc(firestore, "plans", "x"), { title: "t", status: "unknown", lines: [] }));
+  });
+
+  it("在庫数の手入力: 変わったものだけ保存・履歴は手入力。納品予定の作成時に商品名を変えられる", async () => {
+    const tokyo = locationByName(state, "東京倉庫").id;
+    const pid = productByJan(state, JAN_A).id;
+    expect(await db.saveQuantities([{ productId: pid, locationId: tokyo, quantity: 12 }])).toBe(1);
+    let s = await waitFor((x) => x.stocks.get(tokyo)?.get(pid)?.q === 12);
+    expect(await db.saveQuantities([{ productId: pid, locationId: tokyo, quantity: 12 }])).toBe(0);
+    await expect(db.saveQuantities([{ productId: pid, locationId: tokyo, quantity: -1 }])).rejects.toThrow("0 以上");
+    const { items } = await db.listHistory({ productId: pid });
+    expect(items[0]).toMatchObject({ source: "MANUAL", filename: "手入力", a: 12 });
+    const dest = locationByName(s, "大阪委託店").id;
+    await db.createPlans([{ title: "大阪委託店追加納品", location_id: dest, source_id: "", due: "", status: "todo", memo: "",
+      lines: [{ product_id: pid, jan: JAN_A, name: "新しい名前", quantity: 1 }], done_date: null, applied: false }],
+    [{ productId: pid, name: "新しい名前" }]);
+    s = await waitFor((x) => x.products.get(pid)?.name === "新しい名前" && x.plans.size === 1);
+    expect([...s.plans.values()][0].lines[0].name).toBe("新しい名前");
   });
 
   it("取消した取込は反映できない", async () => {

@@ -21,7 +21,7 @@ import {
   serverTimestamp,
   where,
 } from "firebase/firestore";
-import { StockError, applyBatch, emptyState, newId, working } from "./domain/inventory.js";
+import { StockError, applyBatch, emptyState, newId, saveProduct, setQuantities, working } from "./domain/inventory.js";
 import { applyPlan } from "./domain/plans.js";
 
 const HISTORY_CHUNK = 400; // 1件の履歴ドキュメントに入れる最大件数（1MB 制限対策）
@@ -152,6 +152,11 @@ export async function mutate(fn, { reads = [] } = {}) {
   });
 }
 
+/** 画面で入力した在庫数で上書きする。changes: [{ productId, locationId, quantity }]。戻り値: 変更した件数 */
+export async function saveQuantities(changes) {
+  return mutate((W) => ({ result: setQuantities(W, changes), history: { filename: "手入力", source: "MANUAL" } }));
+}
+
 // ---- 納品予定（plans） ----------------------------------------------------------------
 
 const PLAN_FIELDS = ["title", "location_id", "source_id", "due", "status", "memo", "lines", "done_date", "applied"];
@@ -181,11 +186,19 @@ export async function savePlan(plan) {
   return id;
 }
 
-/** 取り込んだ納品予定をまとめて作成する。作成した ID の配列を返す。 */
-export async function createPlans(plans) {
+/**
+ * 取り込んだ納品予定をまとめて作成する。作成した ID の配列を返す。
+ * renames: 商品名をファイルの名前に変える商品 [{ productId, name }]
+ */
+export async function createPlans(plans, renames = []) {
   const ids = plans.map(() => newId());
-  await runTransaction(db, async (tx) => {
-    plans.forEach((plan, i) => tx.set(planRef(ids[i]), { ...planData(plan), created_at: serverTimestamp(), updated_at: serverTimestamp() }));
+  await mutate((W) => {
+    for (const { productId, name } of renames) {
+      const product = W.products.get(productId);
+      if (!product) throw new StockError("商品が見つかりません（他の人が削除した可能性があります）");
+      saveProduct(W, { ...product, name });
+    }
+    return { writes: plans.map((plan, i) => [planRef(ids[i]), { ...planData(plan), created_at: serverTimestamp(), updated_at: serverTimestamp() }]) };
   });
   return ids;
 }
