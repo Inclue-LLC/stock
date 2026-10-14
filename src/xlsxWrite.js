@@ -241,17 +241,16 @@ export async function planExportWorkbook(state, plans) {
   const { planTitle, resolveLine } = await import("./domain/plans.js");
   const wb = await workbook();
   const ws = wb.addWorksheet("納品予定");
-  headerRow(ws, ["納品先", "JANコード", "キャラクター名", "商品名", "数量", "出荷元", "状態"]);
+  headerRow(ws, ["納品先", "JANコード", "キャラクター名", "商品名", "数量"]);
   for (const plan of plans) {
-    const src = plan.source_id ? state.locations.get(plan.source_id)?.name || "" : "";
     for (const l of plan.lines) {
       const [product] = resolveLine(state, l);
       ws.addRow([planTitle(state, plan), (product ? product.jan : l.jan) || "", product?.character || l.character || "",
-        product ? product.name : l.name, Number(l.quantity) || 0, src, plan.status === "done" ? "完了" : "予定"]);
+        product ? product.name : l.name, Number(l.quantity) || 0]);
     }
   }
   ws.getColumn(2).numFmt = "@";
   ws.getColumn(5).numFmt = "#,##0";
-  [24, 16, 18, 40, 8, 20, 8].forEach((w, i) => (ws.getColumn(i + 1).width = w));
+  [24, 16, 18, 40, 8].forEach((w, i) => (ws.getColumn(i + 1).width = w));
   return wb;
 }

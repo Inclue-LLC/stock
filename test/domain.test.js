@@ -358,7 +358,7 @@ describe("キャラクター名", () => {
     const { plans } = plansFromRows(st, (await parseStockFile("p.xlsx", data)).rows);
     const wb = await planExportWorkbook(st, plans);
     const ws = wb.getWorksheet("納品予定");
-    expect(ws.getRow(1).values.slice(1, 6)).toEqual(["納品先", "JANコード", "キャラクター名", "商品名", "数量"]);
+    expect(ws.getRow(1).values.slice(1)).toEqual(["納品先", "JANコード", "キャラクター名", "商品名", "数量"]);
     expect(ws.getRow(2).values.slice(1, 6)).toEqual(["大阪委託店", JAN_A, "パム", "商品A", 3]);
     const again = plansFromRows(st, (await parseStockFile("e.xlsx", Buffer.from(await wb.xlsx.writeBuffer()))).rows);
     expect(again.plans.map((p) => [p.title, p.lines[0].quantity])).toEqual([["大阪委託店", 3], ["北京委託店", 2]]);
