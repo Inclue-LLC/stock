@@ -23,14 +23,14 @@ export function render(ctx) {
 
   const table = view === "product"
     ? html`<table>
-        <thead><tr>${selectHeader()}<th>キャラクター</th><th>商品</th><th>ブランド</th><th>JANコード</th>
+        <thead><tr>${selectHeader()}<th>キャラクター</th><th>商品</th><th>JANコード</th>
           ${CATEGORIES.map(([r, t]) => html`<th class="r">${REGIONS[r]}<br><span class="chip t-${t}">${TYPES[t]}</span></th>`)}
           <th class="r">合計</th></tr></thead>
         <tbody>${page.items.map(([p, ...qtys]) => html`<tr>
           ${selectCell(p)}
           <td>${p.character}</td>
           <td class="name"><a href="#/products/${p.id}">${p.name}</a>${p.sku ? html`<span class="sub">${p.sku}</span>` : ""}</td>
-          <td>${p.brand}</td><td class="mono">${p.jan || "JANなし"}</td>
+          <td class="mono">${p.jan || "JANなし"}</td>
           ${qtys.slice(0, -1).map((q) => html`<td class="r ${q ? "" : "zero"}">${q ? n(q) : "–"}</td>`)}
           <td class="r">${stockQty(qtys[qtys.length - 1])}</td></tr>`)}</tbody>
       </table>`
