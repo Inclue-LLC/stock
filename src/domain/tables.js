@@ -44,6 +44,12 @@ export function parseQuantity(value) {
   return m ? Math.trunc(Number(m[1])) : null;
 }
 
+/** 金額（「¥1,650」「1650円」なども読む）。 */
+export function parsePrice(value) {
+  if (typeof value === "string") value = value.normalize("NFKC").replace(/^\s*[¥\\$]\s*/, "");
+  return parseQuantity(value);
+}
+
 export function matchHeader(cells, required = STOCK_REQUIRED) {
   const mapping = {};
   cells.forEach((cell, idx) => {
@@ -110,7 +116,7 @@ export function rowsFromTable(table, result, label = "", required = STOCK_REQUIR
       unit: text(cell(cells, "unit")),
       brand: text(cell(cells, "brand")),
       character: text(cell(cells, "character")),
-      price: parseQuantity(cell(cells, "price")),
+      price: parsePrice(cell(cells, "price")),
       note: text(cell(cells, "note")),
     });
   }

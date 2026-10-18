@@ -149,16 +149,17 @@ function productGuide(ws) {
 async function importTemplate(sheetName, rows) {
   const wb = await workbook();
   const ws = wb.addWorksheet(sheetName);
-  header(ws, [["JANコード", 18], ["キャラクター名", 18], ["商品名", 36], ["数量", 10], ["拠点", 22]],
-    [REQUIRED, HEADER, HEADER, REQUIRED, HEADER]);
+  header(ws, [["JANコード", 18], ["キャラクター名", 18], ["商品名", 36], ["上代（税込）", 13], ["数量", 10], ["拠点", 22]],
+    [REQUIRED, HEADER, HEADER, HEADER, REQUIRED, HEADER]);
   for (let r = 2; r <= rows + 1; r++) {
     const row = ws.getRow(r);
-    for (let c = 1; c <= 5; c++) {
+    for (let c = 1; c <= 6; c++) {
       row.getCell(c).font = { name: FONT, size: 11 };
       row.getCell(c).border = BORDER;
     }
     row.getCell(1).numFmt = "@";
     row.getCell(4).numFmt = "#,##0";
+    row.getCell(5).numFmt = "#,##0";
   }
   return wb;
 }
@@ -187,9 +188,10 @@ export async function stockExportWorkbook(state, view, filters) {
   } else {
     // 拠点ごとの列（見出しは「拠点名（日本・倉庫）」）
     const { locations, rows } = productLocationTotals(state, { q: filters.q, onlyInStock: !filters.includeZero, characters: filters.characters });
-    headerRow(ws, ["JANコード", "キャラクター名", "商品名", ...locations.map((l) => `${l.name}（${REGIONS[l.region]}・${TYPES[l.type]}）`), "合計"]);
-    for (const [p, ...qtys] of rows) ws.addRow([p.jan, p.character, p.name, ...qtys]);
-    for (let i = 0; i <= locations.length; i++) ws.getColumn(4 + i).width = 16;
+    headerRow(ws, ["JANコード", "キャラクター名", "商品名", "上代（税込）", ...locations.map((l) => `${l.name}（${REGIONS[l.region]}・${TYPES[l.type]}）`), "合計"]);
+    for (const [p, ...qtys] of rows) ws.addRow([p.jan, p.character, p.name, p.price ?? null, ...qtys]);
+    ws.getColumn(4).numFmt = "#,##0";
+    for (let i = 0; i <= locations.length + 1; i++) ws.getColumn(4 + i).width = 16;
   }
   ws.getColumn(1).numFmt = "@";
   ws.getColumn(1).width = 16;
@@ -201,13 +203,14 @@ export async function stockExportWorkbook(state, view, filters) {
 export async function storeExportWorkbook(state, location, filters) {
   const wb = await workbook();
   const ws = wb.addWorksheet(location.name.slice(0, 31).replace(/[\\/?*[\]:]/g, " "));
-  headerRow(ws, ["キャラクター名", "商品名", "JANコード", "在庫数"]);
+  headerRow(ws, ["キャラクター名", "商品名", "JANコード", "上代（税込）", "在庫数"]);
   for (const r of locationStockRows(state, location.id, filters)) {
-    ws.addRow([r.product.character, r.product.name, r.product.jan, r.q]);
+    ws.addRow([r.product.character, r.product.name, r.product.jan, r.product.price ?? null, r.q]);
   }
   ws.getColumn(3).numFmt = "@";
   ws.getColumn(4).numFmt = "#,##0";
-  [18, 40, 16, 10].forEach((w, i) => (ws.getColumn(i + 1).width = w));
+  ws.getColumn(5).numFmt = "#,##0";
+  [18, 40, 16, 13, 10].forEach((w, i) => (ws.getColumn(i + 1).width = w));
   return wb;
 }
 
@@ -241,16 +244,17 @@ export async function planExportWorkbook(state, plans) {
   const { planTitle, resolveLine } = await import("./domain/plans.js");
   const wb = await workbook();
   const ws = wb.addWorksheet("納品予定");
-  headerRow(ws, ["納品先", "JANコード", "キャラクター名", "商品名", "数量"]);
+  headerRow(ws, ["納品先", "JANコード", "キャラクター名", "商品名", "上代（税込）", "数量"]);
   for (const plan of plans) {
     for (const l of plan.lines) {
       const [product] = resolveLine(state, l);
       ws.addRow([planTitle(state, plan), (product ? product.jan : l.jan) || "", product?.character || l.character || "",
-        product ? product.name : l.name, Number(l.quantity) || 0]);
+        product ? product.name : l.name, product?.price ?? l.price ?? null, Number(l.quantity) || 0]);
     }
   }
   ws.getColumn(2).numFmt = "@";
   ws.getColumn(5).numFmt = "#,##0";
-  [24, 16, 18, 40, 8].forEach((w, i) => (ws.getColumn(i + 1).width = w));
+  ws.getColumn(6).numFmt = "#,##0";
+  [24, 16, 18, 40, 13, 8].forEach((w, i) => (ws.getColumn(i + 1).width = w));
   return wb;
 }

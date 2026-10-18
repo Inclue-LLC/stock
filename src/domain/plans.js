@@ -76,8 +76,11 @@ export function applyPlan(W, plan, date) {
     if (q <= 0) return;
     let [product, code, err] = resolveLine(W, line);
     if (err) throw new StockError(`明細${i + 1}行目: ${err}`);
-    if (!product) product = saveProduct(W, { jan: code, name: line.name, character: line.character || "" });
-    else if (!product.character && line.character) saveProduct(W, { ...product, character: line.character });
+    const price = line.price ?? null;
+    if (!product) product = saveProduct(W, { jan: code, name: line.name, character: line.character || "", price });
+    else if ((!product.character && line.character) || (price != null && product.price !== price)) {
+      product = saveProduct(W, { ...product, character: product.character || line.character || "", price: price ?? product.price });
+    }
     if (plan.source_id) {
       applyMovement(W, { productId: product.id, locationId: plan.source_id, kind: "TRANSFER_OUT", quantity: q, date, note });
     }
@@ -126,8 +129,8 @@ export function plansFromRows(state, rows, { source_id = "", location_id = "" } 
     if (!groups.has(loc.id)) groups.set(loc.id, []);
     groups.get(loc.id).push(product
       ? { product_id: product.id, jan: product.jan || "", name: product.name, character: row.character || product.character || "",
-        quantity: row.quantity }
-      : { product_id: null, jan: code || "", name: row.name, character: row.character || "", quantity: row.quantity });
+        price: row.price ?? null, quantity: row.quantity }
+      : { product_id: null, jan: code || "", name: row.name, character: row.character || "", price: row.price ?? null, quantity: row.quantity });
     lines++;
   });
   const plans = [...groups].map(([lid, items]) => ({

@@ -1,7 +1,7 @@
 import { go, searchHash } from "../app.js";
 import { locationStockRows, paginate } from "../domain/inventory.js";
 import { openPlansFor } from "../domain/plans.js";
-import { badge, bulkBar, dateTime, empty, html, icon, n, pager, qtyInput, qtySaveBar, selectCell, selectHeader, stockLegend, wireBulk, wireQtyEdit } from "../ui.js";
+import { yen, badge, bulkBar, dateTime, empty, html, icon, n, pager, qtyInput, qtySaveBar, selectCell, selectHeader, stockLegend, wireBulk, wireQtyEdit } from "../ui.js";
 import { saveQtyAction } from "./qtyEdit.js";
 import { bulkDelete } from "./bulkDelete.js";
 import { download, storeExportWorkbook } from "../xlsxWrite.js";
@@ -33,14 +33,15 @@ export function render(ctx) {
         ${stockLegend()}
       </form>
       ${page.items.length ? html`<form data-action="bulkDelete">${bulkBar(qtySaveBar())}<div class="table-wrap"><table>
-        <thead><tr>${selectHeader()}<th>キャラクター</th><th>商品</th><th>JANコード</th><th class="r">在庫数 <span class="hint">（入力して保存）</span></th></tr></thead>
+        <thead><tr>${selectHeader()}<th>キャラクター</th><th>商品</th><th>JANコード</th><th class="r">上代（税込）</th><th class="r">在庫数 <span class="hint">（入力して保存）</span></th></tr></thead>
         <tbody>${page.items.map(({ product: p, q }) => html`<tr>
           ${selectCell(p)}
           <td>${p.character}</td>
           <td class="name"><a href="#/products/${p.id}">${p.name}</a>${p.sku ? html`<span class="sub">${p.sku}</span>` : ""}</td>
           <td class="mono">${p.jan || "JANなし"}</td>
+          <td class="r nowrap">${yen(p.price)}</td>
           <td class="r qty-cell">${qtyInput(p.id, location.id, q, `${p.name}の在庫数`)}</td></tr>`)}</tbody>
-        <tfoot><tr><td></td><td colspan="3">合計 <span class="muted">${n(rows.length)}商品</span></td><td class="r">${n(total)}</td></tr></tfoot>
+        <tfoot><tr><td></td><td colspan="4">合計 <span class="muted">${n(rows.length)}商品</span></td><td class="r">${n(total)}</td></tr></tfoot>
       </table></div></form>${pager(page, ctx.urlWith)}`
       : empty("該当する在庫はありません。", `#/imports?location_id=${location.id}`, "ファイルから更新する")}
     </section>`,

@@ -1,5 +1,5 @@
 import { REGIONS, TYPES, characterList, currentQty, paginate, productLocationTotals, todayJst } from "../domain/inventory.js";
-import { bulkBar, empty, html, icon, n, pager, qtyInput, raw, selectCell, stockLegend, stockQty, wireBulk, wireQtyEdit } from "../ui.js";
+import { bulkBar, empty, html, icon, n, pager, yen, qtyInput, raw, selectCell, stockLegend, stockQty, wireBulk, wireQtyEdit } from "../ui.js";
 import { saveQtyAction } from "./qtyEdit.js";
 import { bulkDelete } from "./bulkDelete.js";
 import { backupWorkbook, download, stockExportWorkbook } from "../xlsxWrite.js";
@@ -45,7 +45,7 @@ export function render(ctx) {
 
   const table = html`<table class="by-location">
       <thead>
-        <tr>${raw('<th class="sel" rowspan="2"></th>')}<th rowspan="2">キャラクター</th><th rowspan="2">商品</th><th rowspan="2">JANコード</th>
+        <tr>${raw('<th class="sel" rowspan="2"></th>')}<th rowspan="2">キャラクター</th><th rowspan="2">商品</th><th rowspan="2">JANコード</th><th class="r" rowspan="2">上代（税込）</th>
           ${groups.map((g) => html`<th class="grp grp-start" colspan="${g.span}">${REGIONS[g.region]} <span class="chip t-${g.type}">${TYPES[g.type]}</span></th>`)}
           <th class="r grp-start" rowspan="2">合計</th></tr>
         <tr>${locations.map((l, i) => html`<th class="r loc ${first(i)}">${l.name}</th>`)}</tr>
@@ -55,6 +55,7 @@ export function render(ctx) {
         <td>${p.character}</td>
         <td class="name"><a href="#/products/${p.id}">${p.name}</a></td>
         <td class="mono">${p.jan || "JANなし"}</td>
+        <td class="r nowrap">${yen(p.price)}</td>
         ${qtys.slice(0, -1).map((q, i) => html`<td class="r ${q ? "" : "zero"} ${first(i)}"><button type="button" class="qty-open" data-pid="${p.id}"
           data-lid="${locations[i].id}" title="クリックして在庫数を編集（${locations[i].name}）">${q ? n(q) : "–"}</button></td>`)}
         <td class="r grp-start">${stockQty(qtys[qtys.length - 1])}</td></tr>`)}</tbody>

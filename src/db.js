@@ -171,7 +171,7 @@ function planData(plan) {
   const data = {};
   for (const k of PLAN_FIELDS) data[k] = plan[k] ?? null;
   data.lines = (plan.lines || []).map((l) => ({ product_id: l.product_id || null, jan: l.jan || "", name: l.name || "",
-    character: l.character || "", quantity: Number(l.quantity) || 0 }));
+    character: l.character || "", price: l.price ?? null, quantity: Number(l.quantity) || 0 }));
   return data;
 }
 
@@ -197,6 +197,11 @@ export async function createPlans(plans, renames = []) {
       const product = W.products.get(productId);
       if (!product) throw new StockError("商品が見つかりません（他の人が削除した可能性があります）");
       saveProduct(W, { ...product, name });
+    }
+    // ファイルに上代があれば、登録済みの商品の上代を更新する（未登録の商品は完了時に登録）
+    for (const l of plans.flatMap((p) => p.lines)) {
+      const product = l.product_id && W.products.get(l.product_id);
+      if (product && l.price != null && product.price !== l.price) saveProduct(W, { ...product, price: l.price });
     }
     return { writes: plans.map((plan, i) => [planRef(ids[i]), { ...planData(plan), created_at: serverTimestamp(), updated_at: serverTimestamp() }]) };
   });

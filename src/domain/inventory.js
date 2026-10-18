@@ -476,11 +476,11 @@ export function applyBatch(W, batch, now = Date.now(), { renames = [] } = {}) {
         brand: item.brand || "", character: item.character || "", price: item.price ?? null });
       created.set(item.key, product);
     } else if ((!product.brand && item.brand) || (!product.character && item.character)
-      || (product.price == null && item.price != null)) {
-      // マスタの空欄（ブランド・キャラクター・上代）はファイルの値で補う
+      || (item.price != null && product.price !== item.price)) {
+      // マスタの空欄（ブランド・キャラクター）はファイルの値で補う。上代はファイルに入っていれば更新する
       product.brand = product.brand || item.brand || "";
       product.character = product.character || item.character || "";
-      if (product.price == null) product.price = item.price;
+      if (item.price != null) product.price = item.price;
       saveProduct(W, product);
     }
     if (item.name_diff && rename.has(item.index) && nameKey(product.name) !== nameKey(item.name)) {

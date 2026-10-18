@@ -358,10 +358,23 @@ describe("キャラクター名", () => {
     const { plans } = plansFromRows(st, (await parseStockFile("p.xlsx", data)).rows);
     const wb = await planExportWorkbook(st, plans);
     const ws = wb.getWorksheet("納品予定");
-    expect(ws.getRow(1).values.slice(1)).toEqual(["納品先", "JANコード", "キャラクター名", "商品名", "数量"]);
-    expect(ws.getRow(2).values.slice(1, 6)).toEqual(["大阪委託店", JAN_A, "パム", "商品A", 3]);
+    expect(ws.getRow(1).values.slice(1)).toEqual(["納品先", "JANコード", "キャラクター名", "商品名", "上代（税込）", "数量"]);
+    expect(ws.getRow(2).values.slice(1, 5)).toEqual(["大阪委託店", JAN_A, "パム", "商品A"]);
+    expect(ws.getRow(2).getCell(6).value).toBe(3);
     const again = plansFromRows(st, (await parseStockFile("e.xlsx", Buffer.from(await wb.xlsx.writeBuffer()))).rows);
     expect(again.plans.map((p) => [p.title, p.lines[0].quantity])).toEqual([["大阪委託店", 3], ["北京委託店", 2]]);
+  });
+
+  it("上代（税込）: 在庫取込・納品予定の取込で登録・更新できる（¥ 付きも読む）", async () => {
+    const { plansFromRows, applyPlan } = await import("../src/domain/plans.js");
+    const st = seeded();
+    const data = await xlsx([["JANコード", "商品名", "上代（税込）", "数量", "拠点"], [JAN_A, "", "¥1,650", 2, "大阪委託店"], [JAN_B, "新商品B", 990, 1, "大阪委託店"]]);
+    const [after] = apply(st, await batchFrom("p.xlsx", data, "IN", st));
+    expect([productByJan(after, JAN_A).price, productByJan(after, JAN_B).price]).toEqual([1650, 990]);
+    const plan = plansFromRows(st, (await parseStockFile("p.xlsx", data)).rows).plans[0];
+    const W = working(st);
+    applyPlan(W, plan, "2026-10-18");
+    expect([productByJan(W, JAN_A).price, productByJan(W, JAN_B).price]).toEqual([1650, 990]);
   });
 
   it("出力する Excel に品番・単位の列はない", async () => {
@@ -390,10 +403,10 @@ describe("キャラクター名", () => {
     expect(parsed.rows).toHaveLength(1);
     expect([parsed.rows[0].character, parsed.rows[0].price]).toEqual(["タルト", 1650]);
     const sw = (await stockImportWorkbook(3)).getWorksheet("在庫取込");
-    expect(sw.getRow(1).values.slice(1)).toEqual(["JANコード", "キャラクター名", "商品名", "数量", "拠点"]);
+    expect(sw.getRow(1).values.slice(1)).toEqual(["JANコード", "キャラクター名", "商品名", "上代（税込）", "数量", "拠点"]);
     const { planImportWorkbook } = await import("../src/xlsxWrite.js");
     const pw = (await planImportWorkbook(3)).getWorksheet("納品予定");
-    expect(pw.getRow(1).values.slice(1)).toEqual(["JANコード", "キャラクター名", "商品名", "数量", "拠点"]);
+    expect(pw.getRow(1).values.slice(1)).toEqual(["JANコード", "キャラクター名", "商品名", "上代（税込）", "数量", "拠点"]);
   });
 });
 
