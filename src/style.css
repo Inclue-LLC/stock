@@ -373,3 +373,4 @@ table.by-location td.name { min-width: 220px; }
 /* 納品予定の明細の数量 */
 .line-qty { width: 6.5em; min-height: 32px; padding: 4px 8px; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
 .line-qty.changed { outline: 2px solid var(--accent); outline-offset: 1px; }
+.price-choice label { min-width: 0; }

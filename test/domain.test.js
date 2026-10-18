@@ -93,7 +93,7 @@ describe("在庫取込", () => {
     expect(preview.map((p) => p.errors.length > 0)).toEqual([false, false, false, true, true, true]);
     expect(preview[1].product).toBeNull(); // 新規商品
     const [after, r] = apply(st, batch);
-    expect(r).toEqual({ applied: 3, skipped: 3, zeroed: 0, renamed: 0 });
+    expect(r).toEqual({ applied: 3, skipped: 3, zeroed: 0, renamed: 0, repriced: 0 });
     expect(qty(after, JAN_A, "上海倉庫")).toBe(12);
     expect(qty(after, JAN_B, "東京倉庫")).toBe(8);
     expect(productByJan(after, JAN_C)).toBeNull();
@@ -375,6 +375,32 @@ describe("キャラクター名", () => {
     const W = working(st);
     applyPlan(W, plan, "2026-10-18");
     expect([productByJan(W, JAN_A).price, productByJan(W, JAN_B).price]).toEqual([1650, 990]);
+  });
+
+  it("上代が違う行: 確認画面で知らせ、選んだ行だけ上代を変える（空なら補う）", async () => {
+    const { plansFromRows, choosePrices, applyPlan } = await import("../src/domain/plans.js");
+    const W0 = working(seeded());
+    saveProduct(W0, { ...productByJan(W0, JAN_A), price: 1100 });
+    const st = commit(W0);
+    const data = await xlsx([["JAN", "上代", "数量", "拠点"], [JAN_A, 1650, 1, "大阪委託店"], [JAN_A, 1100, 1, "大阪委託店"]]);
+    const batch = await batchFrom("p.xlsx", data, "IN", st);
+    expect(validateBatch(st, batch).map((p) => p.price_diff)).toEqual([true, false]);
+    let W = working(st);
+    expect(applyBatch(W, batch).repriced).toBe(0);
+    expect(productByJan(W, JAN_A).price).toBe(1100); // 選ばなければ登録済みのまま
+    W = working(st);
+    expect(applyBatch(W, batch, Date.now(), { reprices: [0] }).repriced).toBe(1);
+    expect(productByJan(W, JAN_A).price).toBe(1650);
+    // 納品予定
+    const r = plansFromRows(st, (await parseStockFile("p.xlsx", data)).rows);
+    expect(r.priceDiffs.map((d) => d.prices)).toEqual([[1650]]);
+    const pid = productByJan(st, JAN_A).id;
+    W = working(st);
+    applyPlan(W, choosePrices(r.plans, new Map([[pid, null]]))[0], "2026-10-18");
+    expect(productByJan(W, JAN_A).price).toBe(1100);
+    W = working(st);
+    applyPlan(W, choosePrices(r.plans, new Map([[pid, 1650]]))[0], "2026-10-18");
+    expect(productByJan(W, JAN_A).price).toBe(1650);
   });
 
   it("出力する Excel に品番・単位の列はない", async () => {

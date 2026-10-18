@@ -2,22 +2,22 @@ import { go } from "../app.js";
 import { createPlans } from "../db.js";
 import { parseStockFile } from "../domain/files.js";
 import { StockError, sortedLocations } from "../domain/inventory.js";
-import { planQuantity, planTitle, plansFromRows, renameLines, sortPlans } from "../domain/plans.js";
-import { dropzone, empty, html, icon, locationOptions, n } from "../ui.js";
+import { choosePrices, planQuantity, planTitle, plansFromRows, renameLines, sortPlans } from "../domain/plans.js";
+import { dropzone, empty, html, icon, locationOptions, n, yen } from "../ui.js";
 import { download, planExportWorkbook, planImportWorkbook } from "../xlsxWrite.js";
 
 const COLUMNS = [["todo", "予定"], ["done", "完了"]];
 const DONE_LIMIT = 30; // 完了の列は新しい順にこの件数まで
 
-// 登録済みと商品名が違う行があったときの、作成前の確認待ちの取込（{ plans, errors, lines, diffs, filename }）
+// 登録済みと商品名・上代が違う行があったときの、作成前の確認待ちの取込（{ plans, errors, lines, diffs, priceDiffs, filename }）
 let pending = null;
 
 function confirmCard(p) {
   return html`<section class="card highlight">
-    <div class="card-head"><h2>商品名の確認</h2><span class="muted">${p.filename}</span></div>
+    <div class="card-head"><h2>商品名・上代の確認</h2><span class="muted">${p.filename}</span></div>
     <form data-action="confirmImport" class="card-body form">
-      <div class="alert warn" style="margin:0">${icon("alert")}<span>登録済みの商品と<b>商品名が違う商品が ${p.diffs.length}件</b>あります。
-        商品ごとに、登録済みの商品名のままにするか、ファイルの商品名に変えるかを選んでから作成してください。
+      ${p.diffs.length ? html`<div class="alert warn" style="margin:0">${icon("alert")}<span>登録済みの商品と<b>商品名が違う商品が ${p.diffs.length}件</b>あります。
+        商品ごとに、登録済みの商品名のままにするか、ファイルの商品名に変えるかを選んでください。
         <span class="setall"><button type="button" class="ghost sm" data-setall="keep">すべて登録済みのまま</button>
         <button type="button" class="ghost sm" data-setall="0">すべてファイルの商品名にする</button></span></span></div>
       <div class="table-wrap"><table>
@@ -28,7 +28,21 @@ function confirmCard(p) {
             <label><input type="radio" name="rn_${product.id}" value="keep" checked><span><small>登録済み</small>${product.name}</span></label>
             ${names.map((name, i) => html`<label><input type="radio" name="rn_${product.id}" value="${i}"><span><small>ファイル</small>${name}</span></label>`)}
           </div></td></tr>`)}</tbody>
-      </table></div>
+      </table></div>` : ""}
+      ${p.priceDiffs.length ? html`<div class="alert warn" style="margin:0">${icon("alert")}<span>登録済みの商品と<b>上代が違う商品が ${p.priceDiffs.length}件</b>あります。
+        商品ごとに、登録済みの上代のままにするか、ファイルの上代に変えるかを選んでください。
+        <span class="setall"><button type="button" class="ghost sm" data-setall="keep" data-scope="price-choice">すべて登録済みのまま</button>
+        <button type="button" class="ghost sm" data-setall="0" data-scope="price-choice">すべてファイルの上代にする</button></span></span></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>JANコード</th><th>商品名</th><th>上代（税込）</th></tr></thead>
+        <tbody>${p.priceDiffs.map(({ product, prices }) => html`<tr class="row-diff">
+          <td class="mono">${product.jan || "JANなし"}</td>
+          <td class="name">${product.name}</td>
+          <td><div class="name-choice price-choice">
+            <label><input type="radio" name="rp_${product.id}" value="keep" checked><span><small>登録済み</small>${yen(product.price)}</span></label>
+            ${prices.map((price, i) => html`<label><input type="radio" name="rp_${product.id}" value="${i}"><span><small>ファイル</small>${yen(price)}</span></label>`)}
+          </div></td></tr>`)}</tbody>
+      </table></div>` : ""}
       <p class="hint" style="margin:0">作成する納品予定: ${p.plans.length}件（明細 ${p.lines}行）${p.errors.length ? `・取り込まない行 ${p.errors.length}件` : ""}</p>
       <div class="actions"><button>${icon("check")}この内容で納品予定を作成</button>
         <button type="button" class="ghost" data-click="cancelImport">やめる</button></div>
@@ -95,17 +109,19 @@ export function render(ctx) {
 export function mounted(ctx, root) {
   for (const b of root.querySelectorAll("[data-setall]")) {
     b.addEventListener("click", () => {
-      for (const r of root.querySelectorAll(`.name-choice input[value="${b.dataset.setall}"]`)) r.checked = true;
+      const scope = b.dataset.scope ? `.${b.dataset.scope}` : ".name-choice:not(.price-choice)";
+      for (const r of root.querySelectorAll(`${scope} input[value="${b.dataset.setall}"]`)) r.checked = true;
     });
   }
 }
 
-async function create(ctx, { plans, errors, lines }, renames = []) {
-  await createPlans(renameLines(plans, renames), renames);
+async function create(ctx, { plans, errors, lines }, renames = [], prices = new Map()) {
+  await createPlans(renameLines(choosePrices(plans, prices), renames), renames);
   pending = null;
   const error = errors.length ? `取り込まなかった行 ${errors.length}件: ${errors.slice(0, 10).join(" / ")}${errors.length > 10 ? " ほか" : ""}` : null;
-  const renamed = renames.length ? `。商品名を ${renames.length}件変更しました` : "";
-  go(ctx.urlWith(), { msg: `納品予定を ${plans.length}件作成しました（明細 ${lines}行）${renamed}`, error });
+  const repriced = [...prices.values()].filter((v) => v != null).length;
+  const changed = `${renames.length ? `。商品名を ${renames.length}件変更しました` : ""}${repriced ? `。上代を ${repriced}件変更しました` : ""}`;
+  go(ctx.urlWith(), { msg: `納品予定を ${plans.length}件作成しました（明細 ${lines}行）${changed}`, error });
 }
 
 export const actions = {
@@ -124,7 +140,13 @@ export const actions = {
       const v = f.get(`rn_${product.id}`);
       if (v !== null && v !== "keep") renames.push({ productId: product.id, name: names[Number(v)] });
     }
-    await create(ctx, pending, renames);
+    // 上代: 登録済みのまま → null（変えない）、ファイル → 選んだ金額
+    const prices = new Map();
+    for (const { product, prices: options } of pending.priceDiffs) {
+      const v = f.get(`rp_${product.id}`);
+      prices.set(product.id, v === null || v === "keep" ? null : options[Number(v)]);
+    }
+    await create(ctx, pending, renames, prices);
   },
   cancelImport(ctx) {
     pending = null;
@@ -143,8 +165,8 @@ export const actions = {
       location_id: String(f.get("location_id") || ""), source_id: String(f.get("source_id") || ""),
     });
     if (!result.plans.length) throw new StockError(`取り込める行がありませんでした: ${result.errors.slice(0, 10).join(" / ")}`);
-    if (result.diffs.length) {
-      // 登録済みと商品名が違う商品がある → 選んでもらってから作成する
+    if (result.diffs.length || result.priceDiffs.length) {
+      // 登録済みと商品名・上代が違う商品がある → 選んでもらってから作成する
       pending = { ...result, filename: file.name };
       go(ctx.urlWith(), {});
       return;

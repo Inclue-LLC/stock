@@ -271,12 +271,12 @@ export async function updateImport(id, changes) {
 }
 
 /** 取込を反映する（確認画面の内容を、その時点の最新の在庫で検証し直してから反映）。 */
-/** 取込を反映する。renames: 商品名をファイルの名前に変える行の番号 */
-export async function applyImport(id, { renames = [] } = {}) {
+/** 取込を反映する。renames / reprices: 商品名・上代をファイルの値に変える行の番号 */
+export async function applyImport(id, { renames = [], reprices = [] } = {}) {
   return mutate((W, [snap]) => {
     const batch = batchFromSnap(snap);
     if (!batch) throw new StockError("取込が見つかりません");
-    const result = applyBatch(W, batch, Date.now(), { renames });
+    const result = applyBatch(W, batch, Date.now(), { renames, reprices });
     return { result, writes: [[importRef(id), { ...snap.data(), status: "applied" }]],
       history: { batch_id: id, filename: batch.filename, source: batch.source } };
   }, { reads: [importRef(id)] });

@@ -1,7 +1,7 @@
 import { go } from "../app.js";
 import { applyImport, getImport, updateImport } from "../db.js";
 import { IMPORT_KIND_LABELS, SOURCES, missingStocks, sortedLocations, validateBatch } from "../domain/inventory.js";
-import { empty, html, icon, locationOptions, n } from "../ui.js";
+import { empty, html, icon, locationOptions, n, yen } from "../ui.js";
 
 export const live = false;
 const STATUS = { pending: "未反映", applied: "反映済", cancelled: "取消" };
@@ -14,6 +14,7 @@ export async function render(ctx) {
   const ok = preview.filter((p) => !p.errors.length).length;
   const newProducts = preview.filter((p) => !p.errors.length && !p.product).length;
   const diffs = preview.filter((p) => !p.errors.length && p.name_diff).length;
+  const priceDiffs = preview.filter((p) => !p.errors.length && p.price_diff).length;
   const warnings = batch.warnings || [];
   return {
     title: "更新内容の確認",
@@ -39,22 +40,31 @@ export async function render(ctx) {
         登録済みの商品と<b>商品名が違う行が ${diffs}件</b>あります。行ごとに、登録済みの商品名のままにするか、ファイルの商品名に変えるかを選んでください。
         <span class="setall"><button type="button" class="ghost sm" data-setall="keep">すべて登録済みのまま</button>
         <button type="button" class="ghost sm" data-setall="file">すべてファイルの商品名にする</button></span></span></div></div>` : ""}
+      ${priceDiffs ? html`<div class="card-body name-diff-bar"><div class="alert warn" style="margin:0">${icon("alert")}<span>
+        登録済みの商品と<b>上代が違う行が ${priceDiffs}件</b>あります。行ごとに、登録済みの上代のままにするか、ファイルの上代に変えるかを選んでください。
+        <span class="setall"><button type="button" class="ghost sm" data-setall="keep" data-scope="price-choice">すべて登録済みのまま</button>
+        <button type="button" class="ghost sm" data-setall="file" data-scope="price-choice">すべてファイルの上代にする</button></span></span></div></div>` : ""}
       ${preview.length ? html`<div class="table-wrap"><table>
-        <thead><tr><th>#</th><th>商品</th><th>JANコード</th><th>拠点</th><th class="r">数量</th><th class="r">現在</th><th class="r">反映後</th><th>確認</th></tr></thead>
-        <tbody>${preview.map((p) => html`<tr class="${p.errors.length ? "row-err" : !p.product ? "row-new" : p.name_diff ? "row-diff" : ""}">
+        <thead><tr><th>#</th><th>商品</th><th>JANコード</th><th class="r">上代（税込）</th><th>拠点</th><th class="r">数量</th><th class="r">現在</th><th class="r">反映後</th><th>確認</th></tr></thead>
+        <tbody>${preview.map((p) => html`<tr class="${p.errors.length ? "row-err" : !p.product ? "row-new" : p.name_diff || p.price_diff ? "row-diff" : ""}">
           <td class="muted">${p.index + 1}</td>
           <td class="name">${p.name_diff && !p.errors.length ? html`<div class="name-choice">
               <label><input type="radio" name="rn_${p.index}" value="keep" checked><span><small>登録済み</small>${p.product.name}</span></label>
               <label><input type="radio" name="rn_${p.index}" value="file"><span><small>ファイル</small>${p.name}</span></label>
             </div>` : p.product ? p.product.name : p.name}${p.sku ? html`<span class="sub">${p.sku}</span>` : ""}</td>
           <td class="mono">${p.jan_code || p.jan || "JANなし"}</td>
+          <td class="r nowrap">${p.price_diff && !p.errors.length ? html`<div class="name-choice price-choice">
+              <label><input type="radio" name="rp_${p.index}" value="keep" checked><span><small>登録済み</small>${yen(p.product.price)}</span></label>
+              <label><input type="radio" name="rp_${p.index}" value="file"><span><small>ファイル</small>${yen(p.price)}</span></label>
+            </div>` : yen(p.product?.price ?? p.price ?? null)}</td>
           <td>${p.location ? p.location.name : p.location_name || ""}</td>
           <td class="r"><b>${p.quantity == null ? "?" : n(p.quantity)}</b></td>
           <td class="r muted">${p.current == null ? "" : n(p.current)}</td>
           <td class="r">${p.after == null ? "" : n(p.after)}</td>
           <td>${p.errors.length ? html`<span class="neg">${p.errors.join(" / ")}</span>`
             : !p.product ? html`<span class="chip s-pending">新規商品</span>`
-            : p.name_diff ? html`<span class="chip s-pending">商品名が違う</span>` : html`<span class="chip s-applied">OK</span>`}</td>
+            : p.name_diff || p.price_diff ? html`<span class="chip s-pending">${[p.name_diff && "商品名", p.price_diff && "上代"].filter(Boolean).join("・")}が違う</span>`
+            : html`<span class="chip s-applied">OK</span>`}</td>
         </tr>`)}</tbody></table></div>` : empty("読み取れた行はありません。")}
       ${missing.length ? html`<div class="card-body" style="border-top:1px solid var(--border)"><details class="more">
         <summary>ファイルにない商品 ${missing.length}件の在庫を0にします（クリックで一覧）</summary>
@@ -74,10 +84,11 @@ export async function render(ctx) {
 }
 
 export function mounted(ctx, root) {
-  // 「すべて〜」で商品名の選択をまとめて切り替える
+  // 「すべて〜」で商品名（または上代）の選択をまとめて切り替える
   for (const b of root.querySelectorAll("[data-setall]")) {
     b.addEventListener("click", () => {
-      for (const r of root.querySelectorAll(`.name-choice input[value="${b.dataset.setall}"]`)) r.checked = true;
+      const scope = b.dataset.scope ? `.${b.dataset.scope}` : ".name-choice:not(.price-choice)";
+      for (const r of root.querySelectorAll(`${scope} input[value="${b.dataset.setall}"]`)) r.checked = true;
     });
   }
 }
@@ -89,10 +100,11 @@ export const actions = {
   },
   async apply(ctx, form) {
     const id = ctx.args[0];
-    const renames = [...new FormData(form)].filter(([k, v]) => k.startsWith("rn_") && v === "file").map(([k]) => Number(k.slice(3)));
-    const r = await applyImport(id, { renames });
+    const picked = (prefix) => [...new FormData(form)].filter(([k, v]) => k.startsWith(prefix) && v === "file").map(([k]) => Number(k.slice(3)));
+    const r = await applyImport(id, { renames: picked("rn_"), reprices: picked("rp_") });
     let msg = `${r.applied}件を反映しました${r.skipped ? `（エラー ${r.skipped}件はスキップ）` : ""}`;
     if (r.renamed) msg += `。商品名を ${r.renamed}件変更しました`;
+    if (r.repriced) msg += `。上代を ${r.repriced}件変更しました`;
     if (r.zeroed) msg += `。ファイルにない ${r.zeroed}件を0にしました`;
     go(`#/imports/${id}`, { msg });
   },

@@ -69,7 +69,7 @@ run("Firestore（エミュレータ）", () => {
     const batch = await db.getImport(id);
     expect(validateBatch(state, batch).filter((p) => !p.errors.length)).toHaveLength(2);
     const r = await db.applyImport(id);
-    expect(r).toEqual({ applied: 2, skipped: 0, zeroed: 0, renamed: 0 });
+    expect(r).toEqual({ applied: 2, skipped: 0, zeroed: 0, renamed: 0, repriced: 0 });
     const s = await waitFor((x) => productByJan(x, JAN_B));
     const lid = locationByName(s, "東京倉庫").id;
     expect(s.stocks.get(lid).get(productByJan(s, JAN_A).id).q).toBe(10);

@@ -401,6 +401,7 @@ export const nameKey = (s) => String(s || "").normalize("NFKC").replace(/\s+/g, 
 /**
  * 各行に商品・拠点の解決結果とエラーを付けたプレビュー用リストを返す。
  * name_diff: 登録済みの商品と、ファイルの商品名が違う（JAN・品番で照合した行）
+ * price_diff: 登録済みの商品の上代と、ファイルの上代が違う（登録済みの上代が空のときは違いとしない）
  */
 export function validateBatch(state, batch) {
   const pending = new Map(); // 同一ファイル内の累積（出庫時の在庫チェック用）
@@ -412,6 +413,7 @@ export function validateBatch(state, batch) {
     item.product = product;
     item.jan_code = code;
     item.name_diff = !!(product && row.name && nameKey(row.name) !== nameKey(product.name));
+    item.price_diff = !!(product && row.price != null && product.price != null && row.price !== product.price);
     // 同一ファイル内で同じ商品を指す行をまとめるためのキー
     item.key = product ? `id:${product.id}` : code || `name:${row.name || ""}`;
     if (err) item.errors.push(err);
@@ -453,12 +455,15 @@ export function missingStocks(state, batch, preview) {
 }
 
 /**
- * 取込を反映する。W は working() の作業コピー。戻り値 { applied, skipped, zeroed, renamed }
+ * 取込を反映する。W は working() の作業コピー。戻り値 { applied, skipped, zeroed, renamed, repriced }
  * renames: 商品名をファイルの名前に変える行の番号（index）。それ以外は登録済みの商品名のまま。
+ * reprices: 上代をファイルの金額に変える行の番号。それ以外は登録済みの上代のまま（登録済みの上代が空なら補う）。
  */
-export function applyBatch(W, batch, now = Date.now(), { renames = [] } = {}) {
+export function applyBatch(W, batch, now = Date.now(), { renames = [], reprices = [] } = {}) {
   const rename = new Set(renames.map(Number));
+  const reprice = new Set(reprices.map(Number));
   let renamed = 0;
+  let repriced = 0;
   if (batch.status !== "pending") throw new StockError("この取込はすでに処理済みです");
   let applied = 0;
   let skipped = 0;
@@ -476,12 +481,17 @@ export function applyBatch(W, batch, now = Date.now(), { renames = [] } = {}) {
         brand: item.brand || "", character: item.character || "", price: item.price ?? null });
       created.set(item.key, product);
     } else if ((!product.brand && item.brand) || (!product.character && item.character)
-      || (item.price != null && product.price !== item.price)) {
-      // マスタの空欄（ブランド・キャラクター）はファイルの値で補う。上代はファイルに入っていれば更新する
+      || (product.price == null && item.price != null)) {
+      // マスタの空欄（ブランド・キャラクター・上代）はファイルの値で補う
       product.brand = product.brand || item.brand || "";
       product.character = product.character || item.character || "";
-      if (item.price != null) product.price = item.price;
+      if (product.price == null) product.price = item.price ?? null;
       saveProduct(W, product);
+    }
+    if (item.price_diff && reprice.has(item.index) && product.price !== item.price) {
+      product.price = item.price;
+      saveProduct(W, product);
+      repriced++;
     }
     if (item.name_diff && rename.has(item.index) && nameKey(product.name) !== nameKey(item.name)) {
       product.name = item.name;
@@ -496,7 +506,7 @@ export function applyBatch(W, batch, now = Date.now(), { renames = [] } = {}) {
     applyMovement(W, { productId: s.product.id, locationId: s.location.id, kind: "SET", quantity: 0, date: batch.date,
       note: `${batch.filename} に記載なし`, now });
   }
-  return { applied, skipped, zeroed: missing.length, renamed };
+  return { applied, skipped, zeroed: missing.length, renamed, repriced };
 }
 
 /** 拠点の在庫一覧（キャラクター名 → JANコード順）。[{ product, q }] */

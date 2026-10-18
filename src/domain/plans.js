@@ -94,13 +94,15 @@ export function applyPlan(W, plan, date) {
  * 取込ファイルの行から納品予定を作る。拠点ごとに1件。
  * タイトルは納品先の拠点名。options: { source_id, location_id: 「拠点」列が空の行に使う納品先 }
  * 戻り値: { plans, errors: ["N行目: ..."], lines: 取り込んだ行数,
- *          diffs: 登録済みと商品名が違う商品 [{ product, names: [ファイルの商品名...] }] }
+ *          diffs: 登録済みと商品名が違う商品 [{ product, names: [ファイルの商品名...] }],
+ *          priceDiffs: 登録済みと上代が違う商品 [{ product, prices: [ファイルの上代...] }] }
  */
 export function plansFromRows(state, rows, { source_id = "", location_id = "" } = {}) {
   const groups = new Map();
   const errors = [];
   let lines = 0;
   const diffs = new Map();
+  const priceDiffs = new Map();
   rows.forEach((row, i) => {
     const no = `${i + 1}件目`;
     const loc = row.location ? locationByName(state, row.location) : state.locations.get(location_id) || null;
@@ -126,6 +128,11 @@ export function plansFromRows(state, rows, { source_id = "", location_id = "" } 
       const d = diffs.get(product.id);
       if (!d.names.some((x) => nameKey(x) === nameKey(row.name))) d.names.push(row.name);
     }
+    if (product && row.price != null && product.price != null && row.price !== product.price) {
+      if (!priceDiffs.has(product.id)) priceDiffs.set(product.id, { product, prices: [] });
+      const d = priceDiffs.get(product.id);
+      if (!d.prices.includes(row.price)) d.prices.push(row.price);
+    }
     if (!groups.has(loc.id)) groups.set(loc.id, []);
     groups.get(loc.id).push(product
       ? { product_id: product.id, jan: product.jan || "", name: product.name, character: row.character || product.character || "",
@@ -136,7 +143,15 @@ export function plansFromRows(state, rows, { source_id = "", location_id = "" } 
   const plans = [...groups].map(([lid, items]) => ({
     ...emptyPlan(), title: state.locations.get(lid).name, location_id: lid, source_id, lines: items,
   }));
-  return { plans, errors, lines, diffs: [...diffs.values()] };
+  return { plans, errors, lines, diffs: [...diffs.values()], priceDiffs: [...priceDiffs.values()] };
+}
+
+/**
+ * 上代の選択を明細に反映する。prices: Map<商品ID, 選んだ上代 | null（登録済みのまま）>
+ * 登録済みのままにした商品の明細は上代を持たない（作成・完了時に商品の上代を変えない）。
+ */
+export function choosePrices(plans, prices) {
+  return plans.map((p) => ({ ...p, lines: p.lines.map((l) => (prices.has(l.product_id) ? { ...l, price: prices.get(l.product_id) } : l)) }));
 }
 
 /** 商品名の変更（[{ productId, name }]）を、納品予定の明細の商品名にも反映する。 */
