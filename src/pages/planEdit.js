@@ -3,7 +3,7 @@ import { download, planExportWorkbook } from "../xlsxWrite.js";
 import { completePlan, deletePlan, savePlan } from "../db.js";
 import { StockError, sortedLocations, todayJst } from "../domain/inventory.js";
 import { PLAN_STATUS, planQuantity, planTitle, resolveLine } from "../domain/plans.js";
-import { empty, html, icon, locationOptions, n } from "../ui.js";
+import { empty, html, icon, locationOptions, n, yen } from "../ui.js";
 
 // データが変わったら描き直す（入力中のフォームがあるときは app.js の formDirty で描き直さない）
 export const live = true;
@@ -40,13 +40,14 @@ export function render(ctx) {
           <button class="sm">${icon("check")}数量を保存</button>
           <button type="button" class="ghost sm" data-lines-reset>元に戻す</button></span></div>` : ""}
       <div class="table-wrap"><table>
-        <thead><tr><th>キャラクター</th><th>商品</th><th>JANコード</th><th class="r">数量</th><th></th></tr></thead>
+        <thead><tr><th>キャラクター</th><th>商品</th><th>JANコード</th><th class="r">上代（税込）</th><th class="r">数量</th><th></th></tr></thead>
         <tbody>${plan.lines.map((l, i) => {
           const [product, , err] = resolveLine(ctx.state, l);
           return html`<tr>
             <td>${product?.character || l.character || ""}</td>
             <td class="name">${product ? html`<a href="#/products/${product.id}">${product.name}</a>` : l.name}</td>
             <td class="mono">${(product ? product.jan : l.jan) || "JANなし"}</td>
+            <td class="r nowrap">${yen(product?.price ?? l.price ?? null)}</td>
             <td class="r">${editable ? html`<input type="number" class="line-qty" name="q_${i}" min="0" step="1" inputmode="numeric"
               value="${l.quantity}" data-orig="${l.quantity}" aria-label="${l.name}の数量">` : html`<b>${n(l.quantity)}</b>`}</td>
             <td class="hint">${err ? html`<span class="neg">${err}</span>` : product ? "" : "完了時に新規商品として登録"}</td></tr>`;
